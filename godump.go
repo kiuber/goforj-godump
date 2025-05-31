@@ -149,6 +149,7 @@ func findFirstNonInternalFrame() (string, int) {
 	return "", 0
 }
 
+// callerLocation returns the file and line number of the caller at the specified skip level.
 func callerLocation(skip int) (string, int) {
 	_, file, line, ok := runtime.Caller(skip)
 	if !ok {
@@ -157,6 +158,7 @@ func callerLocation(skip int) (string, int) {
 	return file, line
 }
 
+// writeDump writes the values to the tabwriter, handling references and indentation.
 func writeDump(tw *tabwriter.Writer, vs ...any) {
 	referenceMap = map[uintptr]int{} // reset each time
 	visited := map[uintptr]bool{}
@@ -168,6 +170,7 @@ func writeDump(tw *tabwriter.Writer, vs ...any) {
 	}
 }
 
+// printValue recursively prints the value with indentation and handles references.
 func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[uintptr]bool) {
 	if indent > maxDepth {
 		fmt.Fprint(tw, colorize(colorGray, "... (max depth)"))
@@ -294,6 +297,7 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 	}
 }
 
+// asStringer checks if the value implements fmt.Stringer and returns its string representation.
 func asStringer(v reflect.Value) string {
 	val := v
 	if !val.CanInterface() {
@@ -311,10 +315,12 @@ func asStringer(v reflect.Value) string {
 	return ""
 }
 
+// indentPrint prints indented text to the tabwriter.
 func indentPrint(tw *tabwriter.Writer, indent int, text string) {
 	fmt.Fprint(tw, strings.Repeat(" ", indent*indentWidth)+text)
 }
 
+// forceExported returns a value that is guaranteed to be exported, even if it is unexported.
 func forceExported(v reflect.Value) reflect.Value {
 	if v.CanInterface() {
 		return v
@@ -326,6 +332,7 @@ func forceExported(v reflect.Value) reflect.Value {
 	return v
 }
 
+// makeAddressable ensures the value is addressable, wrapping structs in pointers if necessary.
 func makeAddressable(v reflect.Value) reflect.Value {
 	// Already addressable? Do nothing
 	if v.CanAddr() {
@@ -342,6 +349,7 @@ func makeAddressable(v reflect.Value) reflect.Value {
 	return v
 }
 
+// isNil checks if the value is nil based on its kind.
 func isNil(v reflect.Value) bool {
 	switch v.Kind() {
 	case reflect.Ptr, reflect.Slice, reflect.Map, reflect.Interface, reflect.Func, reflect.Chan:
@@ -351,6 +359,7 @@ func isNil(v reflect.Value) bool {
 	}
 }
 
+// escapeControl escapes control characters in a string for safe display.
 func escapeControl(s string) string {
 	replacer := strings.NewReplacer(
 		"\n", `\n`,
@@ -363,6 +372,7 @@ func escapeControl(s string) string {
 	return replacer.Replace(s)
 }
 
+// detectColor checks environment variables to determine if color output should be enabled.
 func detectColor() bool {
 	if os.Getenv("NO_COLOR") != "" {
 		return false
