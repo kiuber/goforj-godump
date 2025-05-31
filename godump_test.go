@@ -430,3 +430,60 @@ func TestSafeStringerCall(t *testing.T) {
 	assert.Contains(t, out, "(nil)")
 	assert.NotContains(t, out, "should never be called") // ensure String() wasn't called
 }
+
+func TestTimePointersEqual(t *testing.T) {
+	now := time.Now()
+	later := now.Add(time.Hour)
+
+	type testCase struct {
+		name     string
+		a        *time.Time
+		b        *time.Time
+		expected bool
+	}
+
+	tests := []testCase{
+		{
+			name:     "both nil",
+			a:        nil,
+			b:        nil,
+			expected: true,
+		},
+		{
+			name:     "one nil",
+			a:        &now,
+			b:        nil,
+			expected: false,
+		},
+		{
+			name:     "equal times",
+			a:        &now,
+			b:        &now,
+			expected: true,
+		},
+		{
+			name:     "different times",
+			a:        &now,
+			b:        &later,
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			equal := timePtrsEqual(tt.a, tt.b)
+			assert.Equal(t, tt.expected, equal)
+			Dump(tt)
+		})
+	}
+}
+
+func timePtrsEqual(a, b *time.Time) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.Equal(*b)
+}

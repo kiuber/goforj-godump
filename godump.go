@@ -161,7 +161,9 @@ func writeDump(tw *tabwriter.Writer, vs ...any) {
 	referenceMap = map[uintptr]int{} // reset each time
 	visited := map[uintptr]bool{}
 	for _, v := range vs {
-		printValue(tw, reflect.ValueOf(v), 0, visited)
+		rv := reflect.ValueOf(v)
+		rv = makeAddressable(rv)
+		printValue(tw, rv, 0, visited)
 		fmt.Fprintln(tw)
 	}
 }
@@ -176,35 +178,9 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		return
 	}
 
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintf(tw, colorize(colorGray, "<godump handled panic: %v>"), r)
-		}
-	}()
-
-	// If value implements fmt.Stringer, use it
-	if v.CanInterface() {
-		val := v.Interface()
-		if s, ok := val.(fmt.Stringer); ok {
-			// Protect against nil underlying pointers that still implement fmt.Stringer
-			rv := reflect.ValueOf(s)
-			if rv.Kind() == reflect.Ptr && rv.IsNil() {
-				// Print type with nil
-				fmt.Fprint(tw, colorize(colorGray, v.Type().String()+"(nil)"))
-				return
-			}
-			fmt.Fprint(tw, colorize(colorLime, s.String())+colorize(colorGray, " #"+v.Type().String()))
-			return
-		}
-	}
-
-	// Custom handling for time.Time
-	if v.Type().PkgPath() == "time" && v.Type().Name() == "Time" {
-		if t, ok := v.Interface().(interface{ String() string }); ok {
-			str := t.String()
-			fmt.Fprint(tw, colorize(colorLime, str)+colorize(colorGray, " #time.Time"))
-			return
-		}
+	if s := asStringer(v); s != "" {
+		fmt.Fprint(tw, s)
+		return
 	}
 
 	if isNil(v) {
@@ -212,6 +188,7 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		fmt.Fprintf(tw, colorize(colorLime, typeStr)+colorize(colorGray, "(nil)"))
 		return
 	}
+
 	if v.Kind() == reflect.Ptr && v.CanAddr() {
 		ptr := v.Pointer()
 		if id, ok := referenceMap[ptr]; ok {
@@ -222,6 +199,7 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 			nextRefID++
 		}
 	}
+
 	switch v.Kind() {
 	case reflect.Ptr, reflect.Interface:
 		printValue(tw, v.Elem(), indent, visited)
@@ -233,20 +211,23 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		}
 	case reflect.Struct:
 		t := v.Type()
-
 		fmt.Fprintf(tw, "%s ", colorize(colorGray, "#"+t.String()))
 		fmt.Fprintln(tw)
-		for i := range v.NumField() {
+		for i := 0; i < v.NumField(); i++ {
 			field := t.Field(i)
 			fieldVal := v.Field(i)
 			symbol := "+"
-			if field.PkgPath != "" {
+			if field.PkgPath != "" { // private
 				symbol = "-"
 				fieldVal = forceExported(fieldVal)
 			}
 			indentPrint(tw, indent+1, colorize(colorYellow, symbol)+field.Name)
 			fmt.Fprint(tw, "	=> ")
-			printValue(tw, fieldVal, indent+1, visited)
+			if s := asStringer(fieldVal); s != "" {
+				fmt.Fprint(tw, s)
+			} else {
+				printValue(tw, fieldVal, indent+1, visited)
+			}
 			fmt.Fprintln(tw)
 		}
 		indentPrint(tw, indent, "")
@@ -272,12 +253,12 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		fmt.Fprint(tw, "}")
 	case reflect.Slice, reflect.Array:
 		fmt.Fprintln(tw, "[")
-		for i := range v.Len() {
+		for i := 0; i < v.Len(); i++ {
 			if i >= maxItems {
 				indentPrint(tw, indent+1, colorize(colorGray, "... (truncated)\n"))
 				break
 			}
-			indentPrint(tw, indent+1, fmt.Sprintf("%s => ", colorize(colorCyan, fmt.Sprintf("%1d", i))))
+			indentPrint(tw, indent+1, fmt.Sprintf("%s => ", colorize(colorCyan, fmt.Sprintf("%d", i))))
 			printValue(tw, v.Index(i), indent+1, visited)
 			fmt.Fprintln(tw)
 		}
@@ -313,15 +294,52 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 	}
 }
 
+func asStringer(v reflect.Value) string {
+	val := v
+	if !val.CanInterface() {
+		val = forceExported(val)
+	}
+	if val.CanInterface() {
+		if s, ok := val.Interface().(fmt.Stringer); ok {
+			rv := reflect.ValueOf(s)
+			if rv.Kind() == reflect.Ptr && rv.IsNil() {
+				return colorize(colorGray, val.Type().String()+"(nil)")
+			}
+			return colorize(colorLime, s.String()) + colorize(colorGray, " #"+val.Type().String())
+		}
+	}
+	return ""
+}
+
 func indentPrint(tw *tabwriter.Writer, indent int, text string) {
 	fmt.Fprint(tw, strings.Repeat(" ", indent*indentWidth)+text)
 }
 
 func forceExported(v reflect.Value) reflect.Value {
-	if v.CanInterface() || !v.CanAddr() {
+	if v.CanInterface() {
 		return v
 	}
-	return reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	if v.CanAddr() {
+		return reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem()
+	}
+	// Final fallback: return original value, even if unexported
+	return v
+}
+
+func makeAddressable(v reflect.Value) reflect.Value {
+	// Already addressable? Do nothing
+	if v.CanAddr() {
+		return v
+	}
+
+	// If it's a struct and not addressable, wrap it in a pointer
+	if v.Kind() == reflect.Struct {
+		ptr := reflect.New(v.Type())
+		ptr.Elem().Set(v)
+		return ptr.Elem()
+	}
+
+	return v
 }
 
 func isNil(v reflect.Value) bool {
