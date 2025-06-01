@@ -216,11 +216,11 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		t := v.Type()
 		fmt.Fprintf(tw, "%s ", colorize(colorGray, "#"+t.String()))
 		fmt.Fprintln(tw)
-		for i, _ := range reflect.VisibleFields(t) {
-			field := t.Field(i)
-			fieldVal := v.Field(i)
+		visibleFields := reflect.VisibleFields(t)
+		for _, field := range visibleFields {
+			fieldVal := v.FieldByIndex(field.Index)
 			symbol := "+"
-			if field.PkgPath != "" { // private
+			if field.PkgPath != "" {
 				symbol = "-"
 				fieldVal = forceExported(fieldVal)
 			}
