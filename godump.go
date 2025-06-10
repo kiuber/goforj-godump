@@ -202,10 +202,7 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 		}
 
 		// Padding before ASCII
-		padding := asciiStartCol - visibleLen
-		if padding < 1 {
-			padding = 1
-		}
+		padding := max(1, asciiStartCol-visibleLen)
 		sb.WriteString(strings.Repeat(" ", padding))
 
 		// ASCII section
