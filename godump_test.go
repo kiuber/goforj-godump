@@ -815,3 +815,15 @@ func TestDumpRawMessage(t *testing.T) {
 
 	Dump(p)
 }
+
+func TestDumpParagraphAsBytes(t *testing.T) {
+	paragraph := `This is a sample paragraph of text.
+It contains multiple lines and some special characters like !@#$%^&*().
+We want to see how it looks when dumped as a byte slice (hex dump).
+New lines are also important to check.`
+
+	// Convert the string to a byte slice
+	paragraphBytes := []byte(paragraph)
+
+	Dump(paragraphBytes)
+}
