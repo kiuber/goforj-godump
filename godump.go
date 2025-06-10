@@ -218,11 +218,11 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 		sb.WriteString(colorize(colorGray, "| "))
 		asciiCount := 0
 		for _, c := range line {
+			s := "."
 			if c >= 32 && c <= 126 {
-				sb.WriteString(colorize(colorLime, string(c)))
-			} else {
-				sb.WriteString(colorize(colorLime, "."))
+				s = string(c)
 			}
+			sb.WriteString(colorize(colorLime, s))
 			asciiCount++
 		}
 		if asciiCount < asciiMaxLen {
