@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -161,24 +160,16 @@ func findFirstNonInternalFrame() (string, int) {
 	return "", 0
 }
 
-// Matches ANSI escape sequences like \x1b[90m
-var ansiStripper = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
-// visibleLen calculates the length of a string after stripping ANSI escape sequences.
-func visibleLen(s string) int {
-	return len(ansiStripper.ReplaceAllString(s, ""))
-}
-
 // formatByteSliceAsHexDump formats a byte slice as a hex dump with ASCII representation.
 func formatByteSliceAsHexDump(b []byte, indent int) string {
 	var sb strings.Builder
 
-	lineLen := 16
-	asciiStartCol := 50
-	asciiMaxLen := 16
+	const lineLen = 16
+	const asciiStartCol = 50
+	const asciiMaxLen = 16
 
 	fieldIndent := strings.Repeat(" ", indent*indentWidth)
-	bodyIndent := fieldIndent + strings.Repeat(" ", 0)
+	bodyIndent := fieldIndent
 
 	// Header
 	sb.WriteString(fmt.Sprintf("([]uint8) (len=%d cap=%d) {\n", len(b), cap(b)))
@@ -187,42 +178,45 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 		end := min(i+lineLen, len(b))
 		line := b[i:end]
 
-		// Raw offset and hex (for measuring width)
-		rawOffset := fmt.Sprintf("%08x  ", i)
-		var rawHex strings.Builder
+		visibleLen := 0
+
+		// Offset
+		offsetStr := fmt.Sprintf("%08x  ", i)
+		sb.WriteString(bodyIndent)
+		sb.WriteString(colorize(colorMeta, offsetStr))
+		visibleLen += len(offsetStr)
+
+		// Hex bytes
 		for j := range lineLen {
+			var hexStr string
 			if j < len(line) {
-				rawHex.WriteString(fmt.Sprintf("%02x ", line[j]))
+				hexStr = fmt.Sprintf("%02x ", line[j])
 			} else {
-				rawHex.WriteString("   ")
+				hexStr = "   "
 			}
 			if j == 7 {
-				rawHex.WriteString(" ")
+				hexStr += " "
 			}
+			sb.WriteString(colorize(colorCyan, hexStr))
+			visibleLen += len(hexStr)
 		}
 
-		// Calculate how many spaces to align ASCII start
-		rawLine := bodyIndent + rawOffset + rawHex.String()
-		padding := asciiStartCol - visibleLen(rawLine)
-		if padding < 0 {
+		// Padding before ASCII
+		padding := asciiStartCol - visibleLen
+		if padding < 1 {
 			padding = 1
 		}
-
-		// Emit line
-		sb.WriteString(bodyIndent)
-		sb.WriteString(colorize(colorMeta, rawOffset))
-		sb.WriteString(colorize(colorCyan, rawHex.String()))
 		sb.WriteString(strings.Repeat(" ", padding))
 
 		// ASCII section
 		sb.WriteString(colorize(colorGray, "| "))
 		asciiCount := 0
 		for _, c := range line {
-			s := "."
+			ch := "."
 			if c >= 32 && c <= 126 {
-				s = string(c)
+				ch = string(c)
 			}
-			sb.WriteString(colorize(colorLime, s))
+			sb.WriteString(colorize(colorLime, ch))
 			asciiCount++
 		}
 		if asciiCount < asciiMaxLen {
@@ -231,7 +225,7 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 		sb.WriteString(colorize(colorGray, " |") + "\n")
 	}
 
-	// remove one space from fieldIndent
+	// Closing
 	fieldIndent = fieldIndent[:len(fieldIndent)-indentWidth]
 	sb.WriteString(fieldIndent + "}")
 	return sb.String()
