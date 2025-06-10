@@ -360,7 +360,7 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 
 		// Default rendering for other slices/arrays
 		fmt.Fprintln(tw, "[")
-		for i := 0; i < v.Len(); i++ {
+		for i := range v.Len() {
 			if i >= maxItems {
 				indentPrint(tw, indent+1, colorize(colorGray, "... (truncated)\n"))
 				break
