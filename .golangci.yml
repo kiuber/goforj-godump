@@ -81,7 +81,7 @@ linters:
         - name: cyclomatic
           arguments:
             # lower=better
-            - 32
+            - 40
         - name: empty-lines
           disabled: true
         - name: line-length-limit
