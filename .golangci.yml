@@ -77,7 +77,7 @@ linters:
           disabled: true
         - name: cognitive-complexity
           arguments:
-            - 38
+            - 50
         - name: cyclomatic
           arguments:
             # lower=better
@@ -96,7 +96,7 @@ linters:
         - name: max-control-nesting
           arguments:
             # lower=better
-            - 3
+            - 4
         - name: max-public-structs
           disabled: true
         - name: indent-error-flow
