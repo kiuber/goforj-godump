@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime"
 	"strings"
 	"text/tabwriter"
@@ -145,6 +146,7 @@ func printDumpHeader(out io.Writer, skip int) {
 // findFirstNonInternalFrame finds the first non-internal frame in the call stack.
 var callerFn = runtime.Caller
 
+// findFirstNonInternalFrame iterates through the call stack to find the first non-internal frame.
 func findFirstNonInternalFrame() (string, int) {
 	for i := 2; i < 10; i++ {
 		pc, file, line, ok := callerFn(i)
@@ -157,6 +159,85 @@ func findFirstNonInternalFrame() (string, int) {
 		}
 	}
 	return "", 0
+}
+
+// Matches ANSI escape sequences like \x1b[90m
+var ansiStripper = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// visibleLen calculates the length of a string after stripping ANSI escape sequences.
+func visibleLen(s string) int {
+	return len(ansiStripper.ReplaceAllString(s, ""))
+}
+
+// formatByteSliceAsHexDump formats a byte slice as a hex dump with ASCII representation.
+func formatByteSliceAsHexDump(b []byte, indent int) string {
+	var sb strings.Builder
+
+	lineLen := 16
+	asciiStartCol := 68
+	asciiMaxLen := 16
+
+	fieldIndent := strings.Repeat(" ", indent*indentWidth)
+	bodyIndent := fieldIndent + strings.Repeat(" ", 0)
+
+	// Header
+	sb.WriteString(fmt.Sprintf("([]uint8) (len=%d cap=%d) {\n", len(b), cap(b)))
+
+	for i := 0; i < len(b); i += lineLen {
+		end := i + lineLen
+		if end > len(b) {
+			end = len(b)
+		}
+		line := b[i:end]
+
+		// Raw offset and hex (for measuring width)
+		rawOffset := fmt.Sprintf("%08x  ", i)
+		var rawHex strings.Builder
+		for j := 0; j < lineLen; j++ {
+			if j < len(line) {
+				rawHex.WriteString(fmt.Sprintf("%02x ", line[j]))
+			} else {
+				rawHex.WriteString("   ")
+			}
+			if j == 7 {
+				rawHex.WriteString(" ")
+			}
+		}
+
+		// Calculate how many spaces to align ASCII start
+		rawLine := bodyIndent + rawOffset + rawHex.String()
+		padding := asciiStartCol - visibleLen(rawLine)
+		if padding < 0 {
+			padding = 1
+		}
+
+		// Emit line
+		sb.WriteString(bodyIndent)
+		sb.WriteString(colorize(colorMeta, rawOffset))
+		sb.WriteString(colorize(colorCyan, rawHex.String()))
+		sb.WriteString(strings.Repeat(" ", padding))
+
+		// ASCII section
+		sb.WriteString(colorize(colorGray, "| "))
+		asciiCount := 0
+		for _, c := range line {
+			if c >= 32 && c <= 126 {
+				sb.WriteString(colorize(colorLime, string(c)))
+			} else {
+				sb.WriteString(colorize(colorLime, "."))
+			}
+			asciiCount++
+		}
+		if asciiCount < asciiMaxLen {
+			sb.WriteString(strings.Repeat(" ", asciiMaxLen-asciiCount))
+		}
+		sb.WriteString(colorize(colorGray, " |") + "\n")
+	}
+
+	// remove one space from fieldIndent
+	fieldIndent = fieldIndent[:len(fieldIndent)-1]
+	sb.WriteString(fieldIndent + "}")
+	return sb.String()
 }
 
 // callerLocation returns the file and line number of the caller at the specified skip level.
@@ -269,8 +350,20 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		indentPrint(tw, indent, "")
 		fmt.Fprint(tw, "}")
 	case reflect.Slice, reflect.Array:
+		// Special-case []byte for hex+ASCII rendering
+		if v.Type().Elem().Kind() == reflect.Uint8 && v.Kind() == reflect.Slice {
+			if v.CanInterface() {
+				if data, ok := v.Interface().([]byte); ok {
+					hexDump := formatByteSliceAsHexDump(data, indent+1)
+					fmt.Fprint(tw, colorize(colorLime, hexDump))
+					return
+				}
+			}
+		}
+
+		// Default rendering for other slices/arrays
 		fmt.Fprintln(tw, "[")
-		for i := range v.Len() {
+		for i := 0; i < v.Len(); i++ {
 			if i >= maxItems {
 				indentPrint(tw, indent+1, colorize(colorGray, "... (truncated)\n"))
 				break
@@ -281,6 +374,7 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		}
 		indentPrint(tw, indent, "")
 		fmt.Fprint(tw, "]")
+
 	case reflect.String:
 		str := escapeControl(v.String())
 		if utf8.RuneCountInString(str) > maxStringLen {
