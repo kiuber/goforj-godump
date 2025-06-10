@@ -515,7 +515,6 @@ func (fd FriendlyDuration) String() string {
 }
 
 func TestTheKitchenSink(t *testing.T) {
-
 	type Inner struct {
 		ID    int
 		Notes []string
@@ -788,8 +787,8 @@ func TestFdump_WritesToWriter(t *testing.T) {
 func TestHexDumpRendering(t *testing.T) {
 	input := []byte(`{"error":"kek","last_error":"not implemented","lol":"ok"}`)
 	output := DumpStr(input)
-	fmt.Println(output) // For debugging purposes
 	output = stripANSI(output)
+	Dump(input)
 
 	if !strings.Contains(output, "7b 22 65 72 72 6f 72") {
 		t.Error("expected hex dump output missing")
