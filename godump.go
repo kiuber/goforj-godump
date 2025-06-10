@@ -174,7 +174,7 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 	var sb strings.Builder
 
 	lineLen := 16
-	asciiStartCol := 68
+	asciiStartCol := 50
 	asciiMaxLen := 16
 
 	fieldIndent := strings.Repeat(" ", indent*indentWidth)
@@ -235,7 +235,7 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 	}
 
 	// remove one space from fieldIndent
-	fieldIndent = fieldIndent[:len(fieldIndent)-1]
+	fieldIndent = fieldIndent[:len(fieldIndent)-indentWidth]
 	sb.WriteString(fieldIndent + "}")
 	return sb.String()
 }
