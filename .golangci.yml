@@ -10,7 +10,6 @@ linters:
     - gocyclo   # revive
     - lll       # revive
     - unparam   # revive
-    - function-length  # revive
 
     # too strict
     - depguard
@@ -74,6 +73,8 @@ linters:
       severity: error
       enable-all-rules: true
       rules:
+        - name: function-length
+          disabled: true
         - name: add-constant
           disabled: true
         - name: cognitive-complexity
