@@ -84,12 +84,6 @@ linters:
             - 32
         - name: empty-lines
           disabled: true
-        - name: function-length
-          arguments:
-            # statements
-            - 81
-            # lines
-            - 123
         - name: line-length-limit
           arguments:
             - 160
