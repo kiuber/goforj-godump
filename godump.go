@@ -184,16 +184,13 @@ func formatByteSliceAsHexDump(b []byte, indent int) string {
 	sb.WriteString(fmt.Sprintf("([]uint8) (len=%d cap=%d) {\n", len(b), cap(b)))
 
 	for i := 0; i < len(b); i += lineLen {
-		end := i + lineLen
-		if end > len(b) {
-			end = len(b)
-		}
+		end := min(i+lineLen, len(b))
 		line := b[i:end]
 
 		// Raw offset and hex (for measuring width)
 		rawOffset := fmt.Sprintf("%08x  ", i)
 		var rawHex strings.Builder
-		for j := 0; j < lineLen; j++ {
+		for j := range lineLen {
 			if j < len(line) {
 				rawHex.WriteString(fmt.Sprintf("%02x ", line[j]))
 			} else {
