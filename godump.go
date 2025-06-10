@@ -347,13 +347,13 @@ func printValue(tw *tabwriter.Writer, v reflect.Value, indent int, visited map[u
 		indentPrint(tw, indent, "")
 		fmt.Fprint(tw, "}")
 	case reflect.Slice, reflect.Array:
-		// Special-case []byte for hex+ASCII rendering
-		if v.Type().Elem().Kind() == reflect.Uint8 && v.Kind() == reflect.Slice {
-			if v.CanInterface() {
-				if data, ok := v.Interface().([]byte); ok {
+		// []byte handling
+		if v.Type().Elem().Kind() == reflect.Uint8 {
+			if v.CanConvert(reflect.TypeOf([]byte{})) { // Check if it can be converted to []byte
+				if data, ok := v.Convert(reflect.TypeOf([]byte{})).Interface().([]byte); ok {
 					hexDump := formatByteSliceAsHexDump(data, indent+1)
 					fmt.Fprint(tw, colorize(colorLime, hexDump))
-					return
+					break
 				}
 			}
 		}

@@ -1,6 +1,7 @@
 package godump
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/stretchr/testify/require"
 	"os"
@@ -802,4 +803,15 @@ func TestHexDumpRendering(t *testing.T) {
 	if !strings.Contains(output, "([]uint8) (len=") {
 		t.Error("missing []uint8 preamble")
 	}
+}
+
+func TestDumpRawMessage(t *testing.T) {
+	type Payload struct {
+		Meta json.RawMessage
+	}
+
+	raw := json.RawMessage(`{"key":"value","flag":true}`)
+	p := Payload{Meta: raw}
+
+	Dump(p)
 }
