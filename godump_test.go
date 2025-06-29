@@ -1,9 +1,10 @@
 package godump
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/require"
+	"io"
 	"os"
 	"reflect"
 	"regexp"
@@ -13,6 +14,8 @@ import (
 	"text/tabwriter"
 	"time"
 	"unsafe"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -959,4 +962,125 @@ func TestIndirectionNilPointer(t *testing.T) {
 	assert.Contains(t, out, "+Name")
 	assert.Contains(t, out, "John")
 	assert.Contains(t, out, "+Embedded => *godump.Embedded(nil)")
+}
+
+func TestDumpJSON(t *testing.T) {
+	t.Run("no arguments", func(t *testing.T) {
+		jsonStr := DumpJSONStr()
+		expected := `{"error": "DumpJSON called with no arguments"}`
+		assert.JSONEq(t, expected, jsonStr)
+	})
+
+	t.Run("single struct", func(t *testing.T) {
+		type User struct {
+			Name string `json:"name"`
+			Age  int    `json:"age"`
+		}
+		user := User{Name: "Alice", Age: 30}
+		jsonStr := DumpJSONStr(user)
+
+		expected := `{
+			"name": "Alice",
+			"age": 30
+		}`
+		assert.JSONEq(t, expected, jsonStr)
+	})
+
+	t.Run("multiple values", func(t *testing.T) {
+		jsonStr := DumpJSONStr("hello", 42, true)
+		expected := `["hello", 42, true]`
+		assert.JSONEq(t, expected, jsonStr)
+	})
+
+	t.Run("unmarshallable type", func(t *testing.T) {
+		ch := make(chan int)
+		jsonStr := DumpJSONStr(ch)
+		expected := `{"error": "json: unsupported type: chan int"}`
+		assert.JSONEq(t, expected, jsonStr)
+	})
+
+	t.Run("nil value", func(t *testing.T) {
+		jsonStr := DumpJSONStr(nil)
+		assert.JSONEq(t, "null", jsonStr)
+	})
+
+	t.Run("multiple integers", func(t *testing.T) {
+		jsonStr := DumpJSONStr(1, 2)
+		assert.JSONEq(t, "[1, 2]", jsonStr)
+	})
+
+	t.Run("slice of integers", func(t *testing.T) {
+		jsonStr := DumpJSONStr([]int{1, 2})
+		assert.JSONEq(t, "[1, 2]", jsonStr)
+	})
+
+	t.Run("Dumper.DumpJSON writes to writer", func(t *testing.T) {
+		var buf bytes.Buffer
+		d := NewDumper(WithWriter(&buf))
+		d.DumpJSON(map[string]int{"x": 1})
+		assert.JSONEq(t, `{"x": 1}`, buf.String())
+	})
+
+	t.Run("DumpJSON prints to stdout", func(t *testing.T) {
+		r, w, _ := os.Pipe()
+		done := make(chan struct{})
+
+		go func() {
+			NewDumper(WithWriter(w)).DumpJSON("hello")
+			w.Close()
+			close(done)
+		}()
+
+		output, _ := io.ReadAll(r)
+		<-done
+
+		assert.JSONEq(t, `"hello"`, strings.TrimSpace(string(output)))
+	})
+
+	t.Run("DumpJSON prints valid JSON to stdout for multiple values (Dumper)", func(t *testing.T) {
+		var buf bytes.Buffer
+
+		// Use WithWriter to inject the custom output
+		d := NewDumper(WithWriter(&buf))
+		d.DumpJSON("foo", 123, true)
+
+		var got []any
+		err := json.Unmarshal(buf.Bytes(), &got)
+		require.NoError(t, err)
+		assert.Equal(t, []any{"foo", float64(123), true}, got)
+	})
+
+	t.Run("DumpJSON prints valid JSON to stdout for multiple values", func(t *testing.T) {
+		// Save and override defaultDumper temporarily
+		orig := defaultDumper
+
+		r, w, _ := os.Pipe()
+		defaultDumper = NewDumper(WithWriter(w))
+
+		// Read from pipe in goroutine
+		done := make(chan string)
+		go func() {
+			var buf bytes.Buffer
+			_, _ = io.Copy(&buf, r)
+			done <- buf.String()
+		}()
+
+		// Perform the dump
+		DumpJSON("foo", 123, true)
+
+		_ = w.Close()
+		defaultDumper = orig // restore original dumper
+
+		output := <-done
+		output = strings.TrimSpace(output)
+
+		t.Logf("Captured: %q", output)
+
+		var got []any
+		err := json.Unmarshal([]byte(output), &got)
+		require.NoError(t, err, "json.Unmarshal failed with output: %q", output)
+
+		assert.Equal(t, []any{"foo", float64(123), true}, got)
+	})
+
 }

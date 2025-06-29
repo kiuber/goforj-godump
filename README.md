@@ -52,7 +52,7 @@
 go get github.com/goforj/godump
 ````
 
-## 🚀 Usage
+## 🚀 Basic Usage
 
 ```go
 package main
@@ -86,9 +86,6 @@ func main() {
 	// Pretty-print to stdout
 	godump.Dump(user)
 
-	// Dump and exit
-	godump.Dd(user) // this will print the dump and exit the program
-
 	// Get dump as string
 	output := godump.DumpStr(user)
 	fmt.Println("str", output)
@@ -96,9 +93,61 @@ func main() {
 	// HTML for web UI output
 	html := godump.DumpHTML(user)
 	fmt.Println("html", html)
-	
+
+	// Print JSON directly to stdout
+	godump.DumpJSON(user)
+
 	// Write to any io.Writer (e.g. file, buffer, logger)
 	godump.Fdump(os.Stderr, user)
+
+	// Dump and exit
+	godump.Dd(user) // this will print the dump and exit the program 
+}
+```
+
+## 🧪 Example Output
+
+```go
+<#dump // main.go:26
+#main.User
+  +Name    => "Alice"
+  +Profile => #main.Profile
+    +Age   => 30
+    +Email => "alice@example.com"
+  }
+}
+```
+
+## 🏗️ Builder Options Usage
+
+```go
+package main
+
+import (
+	"fmt"
+	"os"
+	"strings"
+	"github.com/goforj/godump"
+)
+
+type Profile struct {
+	Age   int
+	Email string
+}
+
+type User struct {
+	Name    string
+	Profile Profile
+}
+
+func main() {
+	user := User{
+		Name: "Alice",
+		Profile: Profile{
+			Age:   30,
+			Email: "alice@example.com",
+		},
+	}
 
 	// Custom Dumper with all options set explicitly
 	d := godump.NewDumper(
@@ -113,30 +162,24 @@ func main() {
 
 	// Dump to string
 	out := d.DumpStr(user)
-	println("DumpStr output:", out)
+	fmt.Printf("DumpStr output:\n%s\n", out)
 
 	// Dump to HTML string
-	html = d.DumpHTML(user)
-	println("DumpHTML output:", html)
+	html := d.DumpHTML(user)
+	fmt.Printf("DumpHTML output:\n%s\n", html)
+
+	// Dump JSON using the Dumper (returns string)
+	jsonStr := d.DumpJSONStr(user)
+	fmt.Printf("Dumper JSON string:\n%s\n", jsonStr)
+
+	// Print JSON directly from the Dumper
+	d.DumpJSON(user)
 
 	// Dump to custom writer (e.g. a string builder)
 	var sb strings.Builder
 	custom := godump.NewDumper(godump.WithWriter(&sb))
 	custom.Dump(user)
-	println("Dump to string builder:", sb.String())
-}
-```
-
-## 🧪 Example Output
-
-```go
-<#dump // main.go:26
-#main.User
-  +Name    => "Alice"
-  +Profile => #main.Profile
-    +Age   => 30
-    +Email => "alice@example.com"
-  }
+	fmt.Printf("Dump to string builder:\n%s\n", sb.String())
 }
 ```
 

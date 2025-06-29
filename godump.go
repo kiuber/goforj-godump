@@ -1,6 +1,7 @@
 package godump
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -176,6 +177,32 @@ func (d *Dumper) DumpStr(vs ...any) string {
 	return sb.String()
 }
 
+// DumpJSONStr pretty-prints values as JSON and returns it as a string.
+func (d *Dumper) DumpJSONStr(vs ...any) string {
+	if len(vs) == 0 {
+		return `{"error": "DumpJSON called with no arguments"}`
+	}
+
+	var data any = vs
+	if len(vs) == 1 {
+		data = vs[0]
+	}
+
+	b, err := json.MarshalIndent(data, "", strings.Repeat(" ", indentWidth))
+	if err != nil {
+		//nolint:errchkjson // fallback handles this manually below
+		errorJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
+		return string(errorJSON)
+	}
+	return string(b)
+}
+
+// DumpJSON prints a pretty-printed JSON string to the configured writer.
+func (d *Dumper) DumpJSON(vs ...any) {
+	output := d.DumpJSONStr(vs...)
+	fmt.Fprintln(d.writer, output)
+}
+
 // DumpHTML dumps the values as HTML with colorized output.
 func DumpHTML(vs ...any) string {
 	return defaultDumper.DumpHTML(vs...)
@@ -204,6 +231,18 @@ func (d *Dumper) DumpHTML(vs ...any) string {
 
 	sb.WriteString("</pre></body>")
 	return sb.String()
+}
+
+// DumpJSON dumps the values as a pretty-printed JSON string.
+// If there is more than one value, they are dumped as a JSON array.
+// It returns an error string if marshaling fails.
+func DumpJSON(vs ...any) {
+	defaultDumper.DumpJSON(vs...)
+}
+
+// DumpJSONStr dumps the values as a JSON string.
+func DumpJSONStr(vs ...any) string {
+	return defaultDumper.DumpJSONStr(vs...)
 }
 
 // Dd is a debug function that prints the values and exits the program.
