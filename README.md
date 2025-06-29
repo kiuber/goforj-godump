@@ -14,6 +14,7 @@
     <img src="https://img.shields.io/github/v/tag/goforj/godump?label=version&sort=semver" alt="Latest tag">
     <a href="https://goreportcard.com/report/github.com/goforj/godump"><img src="https://goreportcard.com/badge/github.com/goforj/godump" alt="Go Report Card"></a>
     <a href="https://codecov.io/gh/goforj/godump" ><img src="https://codecov.io/gh/goforj/godump/graph/badge.svg?token=ULUTXL03XC"/></a>
+    <a href="https://github.com/avelino/awesome-go?tab=readme-ov-file#parsersencodersdecoders"><img src="https://awesome.re/mentioned-badge-flat.svg" alt="Mentioned in Awesome Go"></a>
 </p>
 
 <p align="center">
@@ -22,11 +23,6 @@
 </p>
 
 <br>
-
-<p align="center">
-<strong>Terminal Output Example (Simple)</strong><br>
-  <img src="./assets/demo-terminal.png">
-</p>
 
 <p align="center">
 <strong>Terminal Output Example (Kitchen Sink)</strong><br>
