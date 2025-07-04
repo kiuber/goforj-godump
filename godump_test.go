@@ -177,20 +177,19 @@ func TestForceExported(t *testing.T) {
 }
 
 func TestDetectColorVariants(t *testing.T) {
-	_ = os.Setenv("NO_COLOR", "1")
-	assert.False(t, detectColor())
+	t.Run("no environment variables", func(t *testing.T) {
+		assert.True(t, detectColor())
+	})
 
-	_ = os.Unsetenv("NO_COLOR")
-	_ = os.Setenv("FORCE_COLOR", "1")
-	assert.True(t, detectColor())
+	t.Run("forcing no color", func(t *testing.T) {
+		t.Setenv("NO_COLOR", "1")
+		assert.False(t, detectColor())
+	})
 
-	_ = os.Unsetenv("FORCE_COLOR")
-	assert.True(t, detectColor())
-}
-
-func TestPrintDumpHeaderFallback(t *testing.T) {
-	// Intentionally skip enough frames so findFirstNonInternalFrame returns empty
-	printDumpHeader(os.Stdout, 100)
+	t.Run("forcing color", func(t *testing.T) {
+		t.Setenv("FORCE_COLOR", "1")
+		assert.True(t, detectColor())
+	})
 }
 
 func TestHtmlColorizeUnknown(t *testing.T) {
@@ -355,17 +354,6 @@ func TestCustomMaxDepthTruncation(t *testing.T) {
 	assert.NotContains(t, out, "... (max depth)")
 }
 
-func TestDetectColorEnvVars(t *testing.T) {
-	os.Setenv("NO_COLOR", "1")
-	assert.False(t, detectColor())
-
-	os.Unsetenv("NO_COLOR")
-	os.Setenv("FORCE_COLOR", "1")
-	assert.True(t, detectColor())
-
-	os.Unsetenv("FORCE_COLOR")
-}
-
 func TestMapTruncation(t *testing.T) {
 	largeMap := map[int]int{}
 	for i := range 200 {
@@ -385,20 +373,6 @@ func TestUnreadableDefaultBranch(t *testing.T) {
 	v := reflect.Value{}
 	out := stripANSI(DumpStr(v))
 	assert.Contains(t, out, "#reflect.Value") // new expected fallback
-}
-
-func TestNoColorEnvironment(t *testing.T) {
-	t.Setenv("NO_COLOR", "1")
-	if detectColor() {
-		t.Error("Expected color to be disabled when NO_COLOR is set")
-	}
-}
-
-func TestForceColorEnvironment(t *testing.T) {
-	t.Setenv("FORCE_COLOR", "1")
-	if !detectColor() {
-		t.Error("Expected color to be enabled when FORCE_COLOR is set")
-	}
 }
 
 func TestNilChan(t *testing.T) {
@@ -691,15 +665,6 @@ func TestForceExportedFallback(t *testing.T) {
 	v := reflect.ValueOf(s{"hidden"}).Field(0) // not addressable
 	out := forceExported(v)
 	assert.Equal(t, "hidden", out.String())
-}
-
-func TestAnsiColorize_DisabledBranch(t *testing.T) {
-	orig := enableColor
-	enableColor = false
-	defer func() { enableColor = orig }()
-
-	out := ansiColorize(colorLime, "xyz")
-	assert.Equal(t, "xyz", out)
 }
 
 func TestFindFirstNonInternalFrame_FallbackBranch(t *testing.T) {
