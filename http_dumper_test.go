@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -57,7 +58,7 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte(`{"success":true}`))
-		require.NoError(t, err, "failed to write response")
+		assert.NoError(t, err, "failed to write response")
 	})
 
 	req := mustNewRequest(t, http.MethodGet, server.URL, http.NoBody)
