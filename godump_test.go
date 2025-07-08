@@ -222,8 +222,8 @@ func TestFindFirstNonInternalFrameFallback(t *testing.T) {
 	// Trigger the fallback by skipping deeper
 	file, line := newDumperT(t).findFirstNonInternalFrame(0)
 	// We can't assert much here reliably, but calling it adds coverage
-	assert.True(t, len(file) >= 0)
-	assert.True(t, line >= 0)
+	assert.Greater(t, len(file), 1)
+	assert.Greater(t, line, 1)
 }
 
 func TestUnreadableFieldFallback(t *testing.T) {

@@ -31,7 +31,6 @@ linters:
     # nice to have
     - usetesting
     - unused
-    - testifylint
     - perfsprint
 
   settings:

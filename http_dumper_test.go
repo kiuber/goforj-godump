@@ -33,7 +33,7 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte(`{"success":true}`))
-		require.NoError(t, err, "failed to write response")
+		assert.NoError(t, err, "failed to write response")
 	}))
 	defer server.Close()
 
@@ -178,7 +178,7 @@ func TestHTTPDebugTransport_PassThroughRoundTripError(t *testing.T) {
 	}
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
-	assert.ErrorIs(t, err, ErrSimulatedTransportFailure)
+	require.ErrorIs(t, err, ErrSimulatedTransportFailure)
 
 	require.Nil(t, resp)
 }
@@ -233,6 +233,6 @@ func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump response")
-	assert.ErrorIs(t, err, errSimulatedBodyReadFailure)
+	require.ErrorIs(t, err, errSimulatedBodyReadFailure)
 	require.Nil(t, resp)
 }
