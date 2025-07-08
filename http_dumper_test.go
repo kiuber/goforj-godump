@@ -2,7 +2,7 @@ package godump
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,23 +13,26 @@ import (
 func TestHttpDebugTransport_WithDebugEnabled(t *testing.T) {
 	var buf bytes.Buffer
 
-	// Enable HTTP_DEBUG
-	_ = os.Setenv("HTTP_DEBUG", "1")
-	defer os.Unsetenv("HTTP_DEBUG")
+	// Enable Http_DEBUG
+	_ = os.Setenv("Http_DEBUG", "1")
+	defer os.Unsetenv("Http_DEBUG")
 
-	transport := NewHttpDebugTransport(http.DefaultTransport)
-	transport.Dumper().writer = &buf // Redirect Dumper to buffer
+	transport := NewHTTPDebugTransport(http.DefaultTransport)
+	transport.Dumper().writer = &buf
+	transport.SetDebug(true) // Force debug on
 
 	client := &http.Client{Transport: transport}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"success":true}`))
+		if _, err := w.Write([]byte(`{"success":true}`)); err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
 	}))
 	defer server.Close()
 
-	req, _ := http.NewRequest("GET", server.URL, nil)
+	req, _ := http.NewRequest("GET", server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,10 +59,10 @@ func TestHttpDebugTransport_WithDebugEnabled(t *testing.T) {
 func TestHttpDebugTransport_WithDebugDisabled(t *testing.T) {
 	var buf bytes.Buffer
 
-	// Disable HTTP_DEBUG
-	_ = os.Unsetenv("HTTP_DEBUG")
+	// Disable Http_DEBUG
+	_ = os.Unsetenv("Http_DEBUG")
 
-	transport := NewHttpDebugTransport(http.DefaultTransport)
+	transport := NewHTTPDebugTransport(http.DefaultTransport)
 	transport.Dumper().writer = &buf // Redirect Dumper to buffer
 
 	client := &http.Client{Transport: transport}
@@ -69,7 +72,7 @@ func TestHttpDebugTransport_WithDebugDisabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	req, _ := http.NewRequest("GET", server.URL, nil)
+	req, _ := http.NewRequest("GET", server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -87,7 +90,7 @@ func TestHttpDebugTransport_WithDebugDisabled(t *testing.T) {
 func TestHttpDebugTransport_SetDebugToggle(t *testing.T) {
 	var buf bytes.Buffer
 
-	transport := NewHttpDebugTransport(http.DefaultTransport)
+	transport := NewHTTPDebugTransport(http.DefaultTransport)
 	transport.Dumper().writer = &buf // Redirect Dumper to buffer
 
 	client := &http.Client{Transport: transport}
@@ -101,7 +104,7 @@ func TestHttpDebugTransport_SetDebugToggle(t *testing.T) {
 	// Debug initially disabled: no dump
 	transport.SetDebug(false)
 
-	req, _ := http.NewRequest("GET", server.URL, nil)
+	req, _ := http.NewRequest("GET", server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -118,14 +121,12 @@ func TestHttpDebugTransport_SetDebugToggle(t *testing.T) {
 	transport.SetDebug(true)
 	buf.Reset()
 
-	req, _ = http.NewRequest("GET", server.URL, nil)
+	req, _ = http.NewRequest("GET", server.URL, http.NoBody)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	defer resp.Body.Close()
-
-	fmt.Println(buf.String())
 
 	output = stripANSI(buf.String())
 	t.Logf("Dump with debug enabled:\n%s", output)
@@ -137,7 +138,7 @@ func TestHttpDebugTransport_SetDebugToggle(t *testing.T) {
 	transport.SetDebug(false)
 	buf.Reset()
 
-	req, _ = http.NewRequest("GET", server.URL, nil)
+	req, _ = http.NewRequest("GET", server.URL, http.NoBody)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -151,26 +152,19 @@ func TestHttpDebugTransport_SetDebugToggle(t *testing.T) {
 	}
 }
 
-// roundTripFunc allows mocking http.RoundTripper in tests.
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return f(req)
-}
-
 func TestHttpDebugTransport_RoundTripError(t *testing.T) {
 	var buf bytes.Buffer
 
 	// Create transport and redirect Dumper
-	transport := NewHttpDebugTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
-		return nil, fmt.Errorf("simulated network error")
+	transport := NewHTTPDebugTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, errors.New("simulated network error")
 	}))
 	transport.Dumper().writer = &buf
 	transport.SetDebug(true) // Force debug on
 
 	client := &http.Client{Transport: transport}
 
-	req, _ := http.NewRequest("GET", "http://example.invalid", nil)
+	req, _ := http.NewRequest("GET", "http://example.invalid", http.NoBody)
 	_, err := client.Do(req)
 	if err == nil || !strings.Contains(err.Error(), "simulated network error") {
 		t.Fatalf("expected simulated network error, got: %v", err)
@@ -183,4 +177,11 @@ func TestHttpDebugTransport_RoundTripError(t *testing.T) {
 	if strings.Contains(output, "Transaction =>") {
 		t.Errorf("did not expect Transaction block when RoundTrip failed")
 	}
+}
+
+// roundTripFunc allows mocking http.RoundTripper in tests.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
