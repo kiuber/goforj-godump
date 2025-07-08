@@ -680,7 +680,7 @@ func TestFindFirstNonInternalFrame_FallbackBranch(t *testing.T) {
 	}
 
 	file, line := testDumper.findFirstNonInternalFrame(0)
-	assert.Equal(t, "", file)
+	assert.Empty(t, file)
 	assert.Equal(t, 0, line)
 }
 
@@ -701,7 +701,7 @@ func TestPrintDumpHeader_SkipWhenNoFrame(t *testing.T) {
 
 	var b strings.Builder
 	testDumper.printDumpHeader(&b)
-	assert.Equal(t, "", b.String()) // nothing should be written
+	assert.Empty(t, b.String())
 }
 
 type customChan chan int
