@@ -59,8 +59,8 @@ func (t *HttpDebugTransport) RoundTrip(req *http.Request) (*http.Response, error
 				respPayload := parseHTTPDump("Response", string(respDump))
 
 				// Combine and dump
-				transaction := map[string]interface{}{
-					"Transaction": map[string]interface{}{
+				transaction := map[string]any{
+					"Transaction": map[string]any{
 						"Request":  reqPayload,
 						"Response": respPayload,
 						"Duration": fmt.Sprintf("%v", duration),
@@ -77,9 +77,9 @@ func (t *HttpDebugTransport) RoundTrip(req *http.Request) (*http.Response, error
 }
 
 // parseHTTPDump parses the raw HTTP dump into a structured map.
-func parseHTTPDump(label, raw string) map[string]interface{} {
+func parseHTTPDump(label, raw string) map[string]any {
 	lines := strings.Split(raw, "\n")
-	payload := make(map[string]interface{})
+	payload := make(map[string]any)
 	headers := make(map[string]string)
 	inBody := false
 	var bodyBuilder strings.Builder
