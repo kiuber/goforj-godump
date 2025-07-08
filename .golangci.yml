@@ -11,6 +11,10 @@ linters:
     - lll       # revive
     - unparam   # revive
 
+    - bodyclose
+    - nestif
+    - gocritic
+
     # too strict
     - depguard
     - exhaustive
@@ -26,6 +30,7 @@ linters:
     - nlreturn
     - whitespace
     - wsl
+#    - wsl_v5 (when linter is upgraded)
 
     # nice to have
     - usetesting
@@ -105,6 +110,8 @@ linters:
           disabled: true
         - name: unused-receiver
           disabled: true
+        - name: unhandled-error
+          disabled: true
 
     staticcheck:
       checks:
@@ -137,3 +144,17 @@ formatters:
       - third_party$
       - builtin$
       - examples$
+
+linters-settings:
+  bodyclose:
+    path-exclude:
+      - _test\.go$
+  embeddedstructfieldcheck:
+    path-exclude:
+      - _test\.go$
+  gocritic:
+    path-exclude:
+      - _test\.go$
+  nestif:
+    path-exclude:
+      - _test\.go$

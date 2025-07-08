@@ -10,16 +10,16 @@ import (
 	"time"
 )
 
-// HttpDebugTransport wraps a http.RoundTripper to optionally log requests and responses.
-type HttpDebugTransport struct {
+// HTTPDebugTransport wraps a http.RoundTripper to optionally log requests and responses.
+type HTTPDebugTransport struct {
 	Transport    http.RoundTripper
 	debugEnabled bool
 	dumper       *Dumper
 }
 
-// NewHTTPDebugTransport creates a HttpDebugTransport with debug flag cached from env.
-func NewHTTPDebugTransport(inner http.RoundTripper) *HttpDebugTransport {
-	return &HttpDebugTransport{
+// NewHTTPDebugTransport creates a HTTPDebugTransport with debug flag cached from env.
+func NewHTTPDebugTransport(inner http.RoundTripper) *HTTPDebugTransport {
+	return &HTTPDebugTransport{
 		Transport:    inner,
 		debugEnabled: os.Getenv("HTTP_DEBUG") != "",
 		dumper:       NewDumper(),
@@ -27,17 +27,17 @@ func NewHTTPDebugTransport(inner http.RoundTripper) *HttpDebugTransport {
 }
 
 // SetDebug allows toggling debug logging at runtime.
-func (t *HttpDebugTransport) SetDebug(enabled bool) {
+func (t *HTTPDebugTransport) SetDebug(enabled bool) {
 	t.debugEnabled = enabled
 }
 
 // Dumper returns the Dumper instance used for logging.
-func (t *HttpDebugTransport) Dumper() *Dumper {
+func (t *HTTPDebugTransport) Dumper() *Dumper {
 	return t.dumper
 }
 
 // RoundTrip implements the http.RoundTripper interface.
-func (t *HttpDebugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *HTTPDebugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.debugEnabled {
 		start := time.Now()
 
@@ -50,7 +50,7 @@ func (t *HttpDebugTransport) RoundTrip(req *http.Request) (*http.Response, error
 			resp, err := t.Transport.RoundTrip(req)
 			duration := time.Since(start)
 			if err != nil {
-				return resp, err
+				return resp, fmt.Errorf("HTTPDebugTransport: round trip failed: %w", err)
 			}
 
 			// Dump Response
@@ -73,7 +73,11 @@ func (t *HttpDebugTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	// No debug: straight pass-through
-	return t.Transport.RoundTrip(req)
+	resp, err := t.Transport.RoundTrip(req)
+	if err != nil {
+		return resp, fmt.Errorf("HTTPDebugTransport: pass-through round trip failed: %w", err)
+	}
+	return resp, nil
 }
 
 // parseHTTPDump parses the raw HTTP dump into a structured map.
