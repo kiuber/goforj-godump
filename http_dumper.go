@@ -89,10 +89,10 @@ func parseHTTPDump(label, raw string) map[string]any {
 	headers := make(map[string]string)
 	inBody := false
 	var bodyBuilder strings.Builder
-
 	for i, line := range lines {
 		line = strings.TrimRight(line, "\r\n")
 
+		// Skip empty lines
 		if i == 0 {
 			if label == "Request" {
 				payload["Request-Line"] = line
@@ -102,21 +102,21 @@ func parseHTTPDump(label, raw string) map[string]any {
 			continue
 		}
 
+		// If we are in the body, accumulate lines
 		if inBody {
 			bodyBuilder.WriteString(line + "\n")
 			continue
 		}
 
+		// If we hit an empty line, switch to body mode
 		if line == "" {
 			inBody = true
 			continue
 		}
 
-		if strings.Contains(line, ":") {
-			parts := strings.SplitN(line, ":", 2)
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			headers[key] = value
+		// Parse headers
+		if key, value, found := strings.Cut(line, ":"); found {
+			headers[strings.TrimSpace(key)] = strings.TrimSpace(value)
 		}
 	}
 

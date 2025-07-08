@@ -62,3 +62,9 @@ linter-run: ##@tool Run Go linter
 	@echo "Running linter..."
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1 run -v
 	@echo "Linter run complete."
+
+run-all: ##@tool Run all tools
+	@echo "Running all tools..."
+	make modernize-check
+	make linter-run
+	@echo "All tools run complete."
