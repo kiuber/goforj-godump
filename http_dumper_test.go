@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strings"
 	"testing"
 )
 
@@ -33,21 +32,16 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte(`{"success":true}`)); err != nil {
-			t.Fatalf("failed to write response: %v", err)
-		}
+		_, err := w.Write([]byte(`{"success":true}`))
+		require.NoError(t, err, "failed to write response")
 	}))
 	defer server.Close()
 
 	//nolint:noctx // no context needed for this unit test: synthetic request
 	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
-	if err != nil {
-		t.Fatalf("failed to create request: %v", err)
-	}
+	require.NoError(t, err)
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err, "expected no error from client.Do")
 	defer resp.Body.Close()
 
 	output := stripANSI(buf.String())
@@ -75,9 +69,7 @@ func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
 	//nolint:noctx // no context needed for this unit test: synthetic request
 	req, _ := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	output := stripANSI(buf.String())
@@ -101,9 +93,9 @@ func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
 	require.NoError(t, err)
 	resp, err := client.Do(req)
-	if err == nil || !strings.Contains(err.Error(), "simulated network error") {
-		t.Fatalf("expected simulated network error, got: %v", err)
-	}
+	require.Error(t, err, "expected simulated network error, got none")
+	require.Contains(t, err.Error(), "simulated network error", "expected error to contain 'simulated network error'")
+
 	if resp != nil {
 		defer resp.Body.Close()
 	}
@@ -135,9 +127,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	require.NoError(t, err)
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	output := stripANSI(buf.String())
@@ -152,9 +142,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	req, err = http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	require.NoError(t, err)
 	resp, err = client.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	require.NoError(t, err)
 	defer resp.Body.Close()
 
 	output = stripANSI(buf.String())
