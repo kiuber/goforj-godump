@@ -18,11 +18,12 @@ type HTTPDebugTransport struct {
 }
 
 // NewHTTPDebugTransport creates a HTTPDebugTransport with debug flag cached from env.
-func NewHTTPDebugTransport(inner http.RoundTripper) *HTTPDebugTransport {
+func NewHTTPDebugTransport(inner http.RoundTripper, opts ...Option) *HTTPDebugTransport {
+	combinedOpts := append([]Option{WithSkipStackFrames(4)}, opts...)
 	return &HTTPDebugTransport{
 		Transport:    inner,
 		debugEnabled: os.Getenv("HTTP_DEBUG") != "",
-		dumper:       NewDumper(WithSkipStackFrames(4)),
+		dumper:       NewDumper(combinedOpts...),
 	}
 }
 
