@@ -111,7 +111,7 @@ func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 
 	// Expect simulated network error
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "simulated network error")
+	require.ErrorContains(t, err, "simulated network error")
 
 	// Ensure no response body to close
 	require.Nil(t, resp)
@@ -170,7 +170,7 @@ func TestHTTPDebugTransport_PassThroughRoundTripError(t *testing.T) {
 
 	// Assert error behavior
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
+	require.ErrorContains(t, err, "HTTPDebugTransport: pass-through round trip failed")
 	require.ErrorIs(t, err, ErrSimulatedTransportFailure)
 
 	// Response should be nil
@@ -197,7 +197,7 @@ func TestHTTPDebugTransport_RequestDumpFailure(t *testing.T) {
 
 	// Assert error behavior
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump request")
+	require.ErrorContains(t, err, "HTTPDebugTransport: failed to dump request")
 }
 
 type errorBody struct{}
@@ -224,7 +224,7 @@ func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
 
 	// Assert response dump failure
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump response")
+	require.ErrorContains(t, err, "HTTPDebugTransport: failed to dump response")
 	require.ErrorIs(t, err, errSimulatedBodyReadFailure)
 
 	// Response should be nil because dump failed
