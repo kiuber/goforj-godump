@@ -11,10 +11,6 @@ linters:
     - lll       # revive
     - unparam   # revive
 
-    - bodyclose
-    - nestif
-    - gocritic
-
     # too strict
     - depguard
     - exhaustive

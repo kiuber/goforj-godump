@@ -2,13 +2,13 @@ package godump
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -18,15 +18,18 @@ var ErrSimulatedNetwork = errors.New("simulated network error")
 func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	var buf bytes.Buffer
 
-	_ = os.Setenv("HTTP_DEBUG", "1")
-	defer os.Unsetenv("HTTP_DEBUG")
+	// Enable HTTP_DEBUG environment variable
+	t.Setenv("HTTP_DEBUG", "1")
 
-	transport := NewHTTPDebugTransport(http.DefaultTransport)
-	transport.Dumper().writer = &buf
-	transport.SetDebug(true)
+	// Create a new HTTPDebugTransport with debug enabled
+	tp := NewHTTPDebugTransport(http.DefaultTransport)
+	tp.Dumper().writer = &buf
+	tp.SetDebug(true)
 
-	client := &http.Client{Transport: transport}
+	// Create an HTTP client with the debug transport
+	client := &http.Client{Transport: tp}
 
+	// Create a test server that responds with a custom header and JSON body
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
@@ -36,7 +39,11 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, http.NoBody)
+	// Create a request to the test server
+	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -46,36 +53,27 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump:\n%s", output)
 
-	if !strings.Contains(output, "Transaction =>") {
-		t.Error("expected 'Transaction =>' in dump, got none")
-	}
-	if !strings.Contains(output, "Request =>") {
-		t.Error("expected 'Request =>' in dump, got none")
-	}
-	if !strings.Contains(output, "Response =>") {
-		t.Error("expected 'Response =>' in dump, got none")
-	}
-	if !strings.Contains(output, `"success":true`) {
-		t.Error("expected JSON body in dump")
-	}
+	assert.Contains(t, output, "Transaction =>", "expected 'Transaction =>' in dump")
+	assert.Contains(t, output, "Request =>", "expected 'Request =>' in dump")
+	assert.Contains(t, output, "Response =>", "expected 'Response =>' in dump")
+	assert.Contains(t, output, `"success":true`, "expected JSON body in dump")
 }
 
 func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
 	var buf bytes.Buffer
 
-	_ = os.Unsetenv("HTTP_DEBUG")
+	tp := NewHTTPDebugTransport(http.DefaultTransport)
+	tp.Dumper().writer = &buf
 
-	transport := NewHTTPDebugTransport(http.DefaultTransport)
-	transport.Dumper().writer = &buf
-
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: tp}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, http.NoBody)
+	//
+	req, _ := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -85,34 +83,33 @@ func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump:\n%s", output)
 
-	if strings.Contains(output, "Transaction =>") {
-		t.Error("did not expect 'Transaction =>' in dump when debug disabled")
-	}
+	assert.NotContains(t, output, "Transaction =>", "did not expect 'Transaction =>' in dump when debug disabled")
 }
 
 func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 	var buf bytes.Buffer
 
-	transport := NewHTTPDebugTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	tp := NewHTTPDebugTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return nil, ErrSimulatedNetwork
 	}))
-	transport.Dumper().writer = &buf
-	transport.SetDebug(true)
+	tp.Dumper().writer = &buf
+	tp.SetDebug(true)
 
-	client := &http.Client{Transport: transport}
+	client := &http.Client{Transport: tp}
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.invalid", http.NoBody)
-	_, err := client.Do(req)
+	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	resp, err := client.Do(req)
 	if err == nil || !strings.Contains(err.Error(), "simulated network error") {
 		t.Fatalf("expected simulated network error, got: %v", err)
+	}
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump (error case):\n%s", output)
 
-	if strings.Contains(output, "Transaction =>") {
-		t.Error("did not expect Transaction block when RoundTrip failed")
-	}
+	assert.NotContains(t, output, "Transaction =>", "did not expect Transaction block when RoundTrip failed")
 }
 
 func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
@@ -132,7 +129,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	// Debug disabled
 	transport.SetDebug(false)
 
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, http.NoBody)
+	req, _ := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -141,15 +138,13 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 
 	output := stripANSI(buf.String())
 	t.Logf("Dump with debug disabled:\n%s", output)
-	if strings.Contains(output, "Transaction =>") {
-		t.Error("did not expect dump output when debug disabled")
-	}
+	assert.NotContains(t, output, "Transaction =>") // Should not be present
 
 	// Enable debug
 	transport.SetDebug(true)
 	buf.Reset()
 
-	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, http.NoBody)
+	req, _ = http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -158,9 +153,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 
 	output = stripANSI(buf.String())
 	t.Logf("Dump with debug enabled:\n%s", output)
-	if !strings.Contains(output, "Transaction =>") {
-		t.Error("expected dump output after enabling debug")
-	}
+	assert.Contains(t, output, "Transaction =>")
 }
 
 // roundTripFunc lets us use a function as a RoundTripper in tests.
@@ -178,13 +171,61 @@ func TestHTTPDebugTransport_PassThroughRoundTripError(t *testing.T) {
 	}))
 	transport.SetDebug(false)
 
+	// Create a client with the debug transport
 	client := &http.Client{Transport: transport}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.invalid", http.NoBody)
+	req, err := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
 	require.NoError(t, err)
 
+	// Simulate a pass-through failure
 	resp, err := client.Do(req)
-	require.Nil(t, resp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
 	assert.ErrorIs(t, err, ErrSimulatedTransportFailure)
+
+	require.Nil(t, resp)
+}
+
+func TestHTTPDebugTransport_RequestDumpFailure(t *testing.T) {
+	tp := NewHTTPDebugTransport(http.DefaultTransport)
+	tp.SetDebug(true)
+
+	client := &http.Client{Transport: tp}
+
+	// Malformed request: URL exists but has no Scheme/Host
+	req := &http.Request{
+		Method: "GET",
+		URL:    &url.URL{},
+		Header: http.Header{},
+	}
+
+	_, err := client.Do(req)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump request")
+}
+
+type errorBody struct{}
+
+func (errorBody) Read(p []byte) (int, error) { return 0, errors.New("simulated body read failure") }
+func (errorBody) Close() error               { return nil }
+
+func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
+	transport := NewHTTPDebugTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(errorBody{}),
+		}, nil
+	}))
+	transport.SetDebug(true)
+
+	client := &http.Client{Transport: transport}
+
+	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 }

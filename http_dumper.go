@@ -22,7 +22,7 @@ func NewHTTPDebugTransport(inner http.RoundTripper) *HTTPDebugTransport {
 	return &HTTPDebugTransport{
 		Transport:    inner,
 		debugEnabled: os.Getenv("HTTP_DEBUG") != "",
-		dumper:       NewDumper(),
+		dumper:       NewDumper(WithSkipStackFrames(4)),
 	}
 }
 
@@ -38,45 +38,47 @@ func (t *HTTPDebugTransport) Dumper() *Dumper {
 
 // RoundTrip implements the http.RoundTripper interface.
 func (t *HTTPDebugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if t.debugEnabled {
-		start := time.Now()
-
-		// Dump Request
-		reqDump, err := httputil.DumpRequestOut(req, true)
-		if err == nil {
-			reqPayload := parseHTTPDump("Request", string(reqDump))
-
-			// Perform request
-			resp, err := t.Transport.RoundTrip(req)
-			duration := time.Since(start)
-			if err != nil {
-				return resp, fmt.Errorf("HTTPDebugTransport: round trip failed: %w", err)
-			}
-
-			// Dump Response
-			respDump, err := httputil.DumpResponse(resp, true)
-			if err == nil {
-				respPayload := parseHTTPDump("Response", string(respDump))
-
-				// Combine and dump
-				transaction := map[string]any{
-					"Transaction": map[string]any{
-						"Request":  reqPayload,
-						"Response": respPayload,
-						"Duration": fmt.Sprintf("%v", duration),
-					},
-				}
-				t.dumper.Dump(transaction)
-			}
-			return resp, nil
+	if !t.debugEnabled {
+		resp, err := t.Transport.RoundTrip(req)
+		if err != nil {
+			return resp, fmt.Errorf("HTTPDebugTransport: pass-through round trip failed: %w", err)
 		}
+		return resp, nil
 	}
 
-	// No debug: straight pass-through
+	start := time.Now()
+
+	// Dump Request
+	reqDump, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		return nil, fmt.Errorf("HTTPDebugTransport: failed to dump request: %w", err)
+	}
+	request := parseHTTPDump("Request", string(reqDump))
+
+	// Perform request
 	resp, err := t.Transport.RoundTrip(req)
 	if err != nil {
-		return resp, fmt.Errorf("HTTPDebugTransport: pass-through round trip failed: %w", err)
+		return nil, fmt.Errorf("HTTPDebugTransport: round trip failed: %w", err)
 	}
+	duration := time.Since(start)
+
+	// Dump Response
+	resDump, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return resp, nil // Still return resp even if dump fails
+	}
+	response := parseHTTPDump("Response", string(resDump))
+
+	// Combine and dump
+	transaction := map[string]any{
+		"Transaction": map[string]any{
+			"Request":  request,
+			"Response": response,
+			"Duration": duration.String(),
+		},
+	}
+	t.dumper.Dump(transaction)
+
 	return resp, nil
 }
 
