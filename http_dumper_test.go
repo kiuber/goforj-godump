@@ -39,7 +39,7 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Create a request to the test server
+	//nolint:noctx // no context needed for this unit test: synthetic request
 	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
@@ -72,7 +72,7 @@ func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
 	}))
 	defer server.Close()
 
-	//
+	//nolint:noctx // no context needed for this unit test: synthetic request
 	req, _ := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
 	resp, err := client.Do(req)
 	if err != nil {
@@ -97,7 +97,9 @@ func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 
 	client := &http.Client{Transport: tp}
 
-	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	//nolint:noctx // no context needed for this unit test: synthetic request
+	req, err := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	require.NoError(t, err)
 	resp, err := client.Do(req)
 	if err == nil || !strings.Contains(err.Error(), "simulated network error") {
 		t.Fatalf("expected simulated network error, got: %v", err)
@@ -129,7 +131,9 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	// Debug disabled
 	transport.SetDebug(false)
 
-	req, _ := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
+	//nolint:noctx // no context needed for this unit test: synthetic request
+	req, err := http.NewRequest(http.MethodGet, server.URL, http.NoBody)
+	require.NoError(t, err)
 	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -144,7 +148,9 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	transport.SetDebug(true)
 	buf.Reset()
 
-	req, _ = http.NewRequest(http.MethodGet, server.URL, http.NoBody)
+	//nolint:noctx // no context needed for this unit test: synthetic request
+	req, err = http.NewRequest(http.MethodGet, server.URL, http.NoBody)
+	require.NoError(t, err)
 	resp, err = client.Do(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -173,11 +179,15 @@ func TestHTTPDebugTransport_PassThroughRoundTripError(t *testing.T) {
 
 	// Create a client with the debug transport
 	client := &http.Client{Transport: transport}
+
 	req, err := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
 	require.NoError(t, err)
 
 	// Simulate a pass-through failure
 	resp, err := client.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
 	assert.ErrorIs(t, err, ErrSimulatedTransportFailure)
@@ -193,12 +203,15 @@ func TestHTTPDebugTransport_RequestDumpFailure(t *testing.T) {
 
 	// Malformed request: URL exists but has no Scheme/Host
 	req := &http.Request{
-		Method: "GET",
+		Method: http.MethodGet,
 		URL:    &url.URL{},
 		Header: http.Header{},
 	}
 
-	_, err := client.Do(req)
+	resp, err := client.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump request")
@@ -206,7 +219,9 @@ func TestHTTPDebugTransport_RequestDumpFailure(t *testing.T) {
 
 type errorBody struct{}
 
-func (errorBody) Read(p []byte) (int, error) { return 0, errors.New("simulated body read failure") }
+var errSimulatedBodyReadFailure = errors.New("simulated body read failure")
+
+func (errorBody) Read(p []byte) (int, error) { return 0, errSimulatedBodyReadFailure }
 func (errorBody) Close() error               { return nil }
 
 func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
@@ -220,12 +235,16 @@ func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
 
 	client := &http.Client{Transport: transport}
 
-	req, _ := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	//nolint:noctx // no context needed for this unit test: synthetic request
+	req, err := http.NewRequest(http.MethodGet, "http://example.invalid", http.NoBody)
+	require.NoError(t, err)
 	resp, err := client.Do(req)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 
-	require.NoError(t, err)
-	require.NotNil(t, resp)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump response")
+	assert.ErrorIs(t, err, errSimulatedBodyReadFailure)
+	require.Nil(t, resp)
 }

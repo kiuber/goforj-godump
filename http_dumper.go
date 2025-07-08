@@ -65,7 +65,7 @@ func (t *HTTPDebugTransport) RoundTrip(req *http.Request) (*http.Response, error
 	// Dump Response
 	resDump, err := httputil.DumpResponse(resp, true)
 	if err != nil {
-		return resp, nil // Still return resp even if dump fails
+		return nil, fmt.Errorf("HTTPDebugTransport: failed to dump response: %w", err)
 	}
 	response := parseHTTPDump("Response", string(resDump))
 
