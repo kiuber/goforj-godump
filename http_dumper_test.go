@@ -3,13 +3,13 @@ package godump
 import (
 	"bytes"
 	"errors"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func newDebugClient(t *testing.T, debug bool, transport http.RoundTripper) (*http.Client, *bytes.Buffer) {
@@ -57,7 +57,7 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 		w.Header().Set("X-Test-Header", "TestValue")
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte(`{"success":true}`))
-		assert.NoError(t, err, "failed to write response")
+		require.NoError(t, err, "failed to write response")
 	})
 
 	req := mustNewRequest(t, http.MethodGet, server.URL, http.NoBody)
@@ -66,10 +66,10 @@ func TestHTTPDebugTransport_WithDebugEnabled(t *testing.T) {
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump:\n%s", output)
 
-	assert.Contains(t, output, "Transaction =>")
-	assert.Contains(t, output, "Request =>")
-	assert.Contains(t, output, "Response =>")
-	assert.Contains(t, output, `"success":true`)
+	require.Contains(t, output, "Transaction =>")
+	require.Contains(t, output, "Request =>")
+	require.Contains(t, output, "Response =>")
+	require.Contains(t, output, `"success":true`)
 }
 
 func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
@@ -94,7 +94,7 @@ func TestHTTPDebugTransport_WithDebugDisabled(t *testing.T) {
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump:\n%s", output)
 
-	assert.NotContains(t, output, "Transaction =>", "did not expect 'Transaction =>' in dump when debug disabled")
+	require.NotContains(t, output, "Transaction =>", "did not expect 'Transaction =>' in dump when debug disabled")
 }
 
 func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
@@ -110,7 +110,7 @@ func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 
 	// Expect simulated network error
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "simulated network error")
+	require.Contains(t, err.Error(), "simulated network error")
 
 	// Ensure no response body to close
 	require.Nil(t, resp)
@@ -118,7 +118,7 @@ func TestHTTPDebugTransport_RoundTripError(t *testing.T) {
 	output := stripANSI(buf.String())
 	t.Logf("Captured dump (error case):\n%s", output)
 
-	assert.NotContains(t, output, "Transaction =>", "did not expect Transaction block when RoundTrip failed")
+	require.NotContains(t, output, "Transaction =>", "did not expect Transaction block when RoundTrip failed")
 }
 
 func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
@@ -133,7 +133,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	mustDoRequest(t, client, mustNewRequest(t, http.MethodGet, server.URL, http.NoBody))
 	output := stripANSI(buf.String())
 	t.Logf("Dump with debug disabled:\n%s", output)
-	assert.NotContains(t, output, "Transaction =>", "should not log when debug disabled")
+	require.NotContains(t, output, "Transaction =>", "should not log when debug disabled")
 
 	// Enable debug
 	tr, ok := client.Transport.(*HTTPDebugTransport)
@@ -144,7 +144,7 @@ func TestHTTPDebugTransport_SetDebugToggle(t *testing.T) {
 	mustDoRequest(t, client, mustNewRequest(t, http.MethodGet, server.URL, http.NoBody))
 	output = stripANSI(buf.String())
 	t.Logf("Dump with debug enabled:\n%s", output)
-	assert.Contains(t, output, "Transaction =>", "should log when debug enabled")
+	require.Contains(t, output, "Transaction =>", "should log when debug enabled")
 }
 
 // roundTripFunc lets us use a function as a RoundTripper in tests.
@@ -169,7 +169,7 @@ func TestHTTPDebugTransport_PassThroughRoundTripError(t *testing.T) {
 
 	// Assert error behavior
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
+	require.Contains(t, err.Error(), "HTTPDebugTransport: pass-through round trip failed")
 	require.ErrorIs(t, err, ErrSimulatedTransportFailure)
 
 	// Response should be nil
@@ -196,7 +196,7 @@ func TestHTTPDebugTransport_RequestDumpFailure(t *testing.T) {
 
 	// Assert error behavior
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump request")
+	require.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump request")
 }
 
 type errorBody struct{}
@@ -223,7 +223,7 @@ func TestHTTPDebugTransport_ResponseDumpFailure(t *testing.T) {
 
 	// Assert response dump failure
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump response")
+	require.Contains(t, err.Error(), "HTTPDebugTransport: failed to dump response")
 	require.ErrorIs(t, err, errSimulatedBodyReadFailure)
 
 	// Response should be nil because dump failed
