@@ -18,7 +18,7 @@ const (
 	colorReset   = "\033[0m"
 	colorGray    = "\033[90m"
 	colorYellow  = "\033[33m"
-	colorLime    = "\033[38;5;113m"
+	colorLime    = "\033[1;38;5;113m"
 	colorCyan    = "\033[38;5;38m"
 	colorNote    = "\033[38;5;38m"
 	colorRef     = "\033[38;5;247m"
@@ -489,7 +489,7 @@ func (d *Dumper) printValue(tw *tabwriter.Writer, v reflect.Value, indent int, v
 			if v.CanConvert(reflect.TypeOf([]byte{})) { // Check if it can be converted to []byte
 				if data, ok := v.Convert(reflect.TypeOf([]byte{})).Interface().([]byte); ok {
 					hexDump := formatByteSliceAsHexDump(data, indent+1)
-					fmt.Fprint(tw, colorize(colorLime, hexDump))
+					fmt.Fprint(tw, colorize(colorGray, hexDump))
 					break
 				}
 			}
