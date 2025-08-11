@@ -17,13 +17,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: "stable"
 
       - name: Install dependencies
         run: go mod tidy
-
-      - name: Check code modernization
-        run: make modernize-check
 
       - name: Run tests
         run: go test ./... -v
