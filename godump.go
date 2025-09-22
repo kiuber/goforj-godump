@@ -196,7 +196,7 @@ func DumpStr(vs ...any) string {
 // DumpStr returns a string representation of the values with colorized output.
 func (d *Dumper) DumpStr(vs ...any) string {
 	var sb strings.Builder
-	d.printDumpHeader(&sb)
+	// d.printDumpHeader(&sb)
 	tw := tabwriter.NewWriter(&sb, 0, 0, 1, ' ', 0)
 	d.writeDump(tw, vs...)
 	tw.Flush()
