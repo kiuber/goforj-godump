@@ -327,6 +327,9 @@ func (d *Dumper) findFirstNonInternalFrame(skip int) (string, int) {
 
 // formatByteSliceAsHexDump formats a byte slice as a hex dump with ASCII representation.
 func (d *Dumper) formatByteSliceAsHexDump(b []byte, indent int) string {
+	// ===== return string directly =====
+	return string(b)
+
 	var sb strings.Builder
 
 	const lineLen = 16
