@@ -8,14 +8,14 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"text/tabwriter"
 	"time"
 	"unsafe"
 
-	"github.com/stretchr/testify/require"
-
-	"github.com/stretchr/testify/assert"
+	assert "github.com/goforj/godump/internal/testassert"
+	require "github.com/goforj/godump/internal/testrequire"
 )
 
 func newDumperT(t *testing.T, opts ...Option) *Dumper {
@@ -49,7 +49,7 @@ func TestSimpleStruct(t *testing.T) {
 
 	assert.Contains(t, out, "#godump.User")
 	assert.Contains(t, out, "+Name")
-	assert.Contains(t, out, "\"Alice\"")
+	assert.Contains(t, out, `"Alice"`)
 	assert.Contains(t, out, "+Profile")
 	assert.Contains(t, out, "#godump.Profile")
 	assert.Contains(t, out, "+Age")
@@ -74,6 +74,39 @@ func TestCycleReference(t *testing.T) {
 	assert.Contains(t, out, "↩︎ &1")
 }
 
+func TestConcurrentDumpReferenceIDs(t *testing.T) {
+	type Node struct {
+		Next *Node
+	}
+
+	d := NewDumper()
+	d.colorizer = colorizeUnstyled
+
+	const runs = 50
+	results := make(chan string, runs)
+
+	var wg sync.WaitGroup
+	wg.Add(runs)
+
+	for i := 0; i < runs; i++ {
+		go func() {
+			defer wg.Done()
+
+			n := &Node{}
+			n.Next = n
+			results <- d.DumpStr(n)
+		}()
+	}
+
+	wg.Wait()
+	close(results)
+
+	for out := range results {
+		assert.Contains(t, out, "↩︎ &1")
+		assert.NotContains(t, out, "↩︎ &2")
+	}
+}
+
 func TestMaxDepth(t *testing.T) {
 	type Node struct {
 		Child *Node
@@ -88,6 +121,260 @@ func TestMaxDepth(t *testing.T) {
 	assert.Contains(t, out, "... (max depth)")
 }
 
+func TestMaxDepthAllowsScalarValues(t *testing.T) {
+	type Inner struct {
+		ID   int
+		Name string
+	}
+	type Outer struct {
+		Inner Inner
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: Inner{
+			ID:   101,
+			Name: "alpha",
+		},
+	})
+
+	assert.Contains(t, out, "ID")
+	assert.Contains(t, out, "101")
+	assert.Contains(t, out, `"alpha"`)
+	assert.NotContains(t, out, "... (max depth)")
+}
+
+func TestMaxDepthBlocksStringerStructs(t *testing.T) {
+	type Inner struct {
+		When time.Time
+	}
+	type Outer struct {
+		Inner Inner
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: Inner{
+			When: time.Unix(0, 0).UTC(),
+		},
+	})
+
+	assert.Contains(t, out, "... (max depth)")
+	assert.NotContains(t, out, "1970-01-01")
+}
+
+func TestIsComplexValue(t *testing.T) {
+	assert.False(t, isComplexValue(reflect.Value{}))
+
+	var ifaceHolder struct {
+		V any
+	}
+	ifaceVal := reflect.ValueOf(ifaceHolder).Field(0)
+	assert.False(t, isComplexValue(ifaceVal))
+
+	ifaceHolder = struct{ V any }{V: struct{}{}}
+	ifaceVal = reflect.ValueOf(ifaceHolder).Field(0)
+	assert.True(t, isComplexValue(ifaceVal))
+
+	var ptr *int
+	assert.False(t, isComplexValue(reflect.ValueOf(ptr)))
+
+	assert.False(t, isComplexValue(reflect.ValueOf(1)))
+	assert.True(t, isComplexValue(reflect.ValueOf(struct{}{})))
+}
+
+func TestMaxDepthBlocksNestedMapValues(t *testing.T) {
+	v := map[string]map[string]int{
+		"outer": {
+			"inner": 1,
+		},
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(v)
+
+	assert.Contains(t, out, "outer")
+	assert.Contains(t, out, "... (max depth)")
+	assert.NotContains(t, out, "inner")
+}
+
+func TestMaxDepthAllowsSliceScalars(t *testing.T) {
+	type Inner struct {
+		Values []int
+	}
+	type Outer struct {
+		Inner Inner
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: Inner{
+			Values: []int{1, 2},
+		},
+	})
+
+	assert.Contains(t, out, "... (max depth)")
+	assert.NotContains(t, out, "0 => 1")
+}
+
+func TestMaxDepthAllowsPointerScalars(t *testing.T) {
+	type Inner struct {
+		ID *int
+	}
+	type Outer struct {
+		Inner Inner
+	}
+	id := 42
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: Inner{
+			ID: &id,
+		},
+	})
+
+	assert.Contains(t, out, "ID")
+	assert.Contains(t, out, "42")
+	assert.NotContains(t, out, "... (max depth)")
+}
+
+func TestMaxDepthAllowsPointerStructFields(t *testing.T) {
+	type Inner struct {
+		Name string
+	}
+	type Outer struct {
+		Inner *Inner
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: &Inner{Name: "alpha"},
+	})
+
+	assert.Contains(t, out, "alpha")
+	assert.NotContains(t, out, "... (max depth)")
+}
+
+func TestMaxDepthAllowsInterfaceScalar(t *testing.T) {
+	type Outer struct {
+		Value any
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Value: "hello",
+	})
+
+	assert.Contains(t, out, `"hello"`)
+	assert.NotContains(t, out, "... (max depth)")
+}
+
+func TestMaxDepthAllowsInterfaceStructFields(t *testing.T) {
+	type Inner struct {
+		Name string
+	}
+	type Outer struct {
+		Value any
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Value: Inner{Name: "alpha"},
+	})
+
+	assert.Contains(t, out, "alpha")
+	assert.NotContains(t, out, "... (max depth)")
+}
+
+func TestMaxDepthAllowsArrayScalars(t *testing.T) {
+	type Inner struct {
+		Values [2]int
+	}
+	type Outer struct {
+		Inner Inner
+	}
+
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		Inner: Inner{
+			Values: [2]int{1, 2},
+		},
+	})
+
+	assert.Contains(t, out, "... (max depth)")
+	assert.NotContains(t, out, "0 => 1")
+}
+
+func TestMaxDepthEdgeCases(t *testing.T) {
+	type Inner struct {
+		ID int
+	}
+	type Outer struct {
+		MapVal      map[string]int
+		SliceVal    []int
+		ArrayVal    [2]int
+		MapPtr      *map[string]int
+		StructPtr   *Inner
+		Interface   any
+		NilMap      map[string]int
+		NilSlice    []int
+		NilSlicePtr *[]int
+	}
+
+	m := map[string]int{"key": 1}
+	s := []int{1, 2}
+	a := [2]int{3, 4}
+	out := newDumperT(t, WithMaxDepth(1)).DumpStr(Outer{
+		MapVal:      m,
+		SliceVal:    s,
+		ArrayVal:    a,
+		MapPtr:      &m,
+		StructPtr:   &Inner{ID: 7},
+		Interface:   Inner{ID: 9},
+		NilMap:      nil,
+		NilSlice:    nil,
+		NilSlicePtr: nil,
+	})
+
+	assert.Contains(t, out, "MapVal")
+	assert.Contains(t, out, "... (max depth)")
+	assert.NotContains(t, out, "key")
+	assert.NotContains(t, out, "0 => 1")
+	assert.NotContains(t, out, "0 => 3")
+
+	assert.Contains(t, out, "StructPtr")
+	assert.Contains(t, out, "ID")
+	assert.Contains(t, out, "7")
+
+	assert.Contains(t, out, "Interface")
+	assert.Contains(t, out, "9")
+
+	assert.Contains(t, out, "NilMap")
+	assert.Contains(t, out, "map[string]int(nil)")
+	assert.Contains(t, out, "NilSlice")
+	assert.Contains(t, out, "[]int(nil)")
+	assert.Contains(t, out, "NilSlicePtr")
+	assert.Contains(t, out, "[]int(nil)")
+}
+
+func TestChanValueRendering(t *testing.T) {
+	var nilCh chan int
+	out := dumpStrT(t, nilCh)
+	assert.Contains(t, out, "chan int(nil)")
+
+	ch := make(chan int)
+	out = dumpStrT(t, ch)
+	assert.Contains(t, out, "chan int")
+}
+
+func TestStringerNilPointer(t *testing.T) {
+	var tptr *time.Time
+	d := newDumperT(t)
+	state := newDumpState()
+	var b strings.Builder
+	tw := tabwriter.NewWriter(&b, 0, 0, 1, ' ', 0)
+	d.printValue(tw, reflect.ValueOf(tptr), 0, state)
+	tw.Flush()
+	out := b.String()
+	assert.Contains(t, out, "time.Time(nil)")
+	assert.NotContains(t, out, "... (max depth)")
+
+	tptr = nil
+	out = d.asStringer(reflect.ValueOf(tptr))
+	assert.Contains(t, out, "time.Time(nil)")
+}
+
 func TestMapOutput(t *testing.T) {
 	m := map[string]int{"a": 1, "b": 2}
 	out := dumpStrT(t, m)
@@ -100,8 +387,8 @@ func TestSliceOutput(t *testing.T) {
 	s := []string{"one", "two"}
 	out := dumpStrT(t, s)
 
-	assert.Contains(t, out, "0 => \"one\"")
-	assert.Contains(t, out, "1 => \"two\"")
+	assert.Contains(t, out, `0 => "one"`)
+	assert.Contains(t, out, `1 => "two"`)
 }
 
 func TestAnonymousStruct(t *testing.T) {
@@ -124,9 +411,9 @@ func TestEmbeddedAnonymousStruct(t *testing.T) {
 
 	assert.Contains(t, out, `#godump.Derived {
   +Base => #godump.Base {
-    +ID => 456
+    +ID => 456 #int
   }
-  +Name => "Test"
+  +Name => "Test" #string
 }`)
 }
 
@@ -173,6 +460,42 @@ func TestDumpHTML(t *testing.T) {
 	assert.Contains(t, html, `bar`)
 }
 
+func TestDumpHTMLNoColor(t *testing.T) {
+	html := NewDumper(WithoutColor()).DumpHTML(map[string]string{"foo": "bar"})
+	assert.NotContains(t, html, `<span style="color:`)
+	assert.Contains(t, html, `foo`)
+	assert.Contains(t, html, `bar`)
+}
+
+func TestDumpStrNoColor(t *testing.T) {
+	out := NewDumper(WithoutColor()).DumpStr("x")
+	assert.NotContains(t, out, string(ansiEscape))
+	assert.Contains(t, out, `"x"`)
+}
+
+func TestDumpStrNoHeader(t *testing.T) {
+	out := newDumperT(t, WithoutHeader()).DumpStr("x")
+	assert.NotContains(t, out, "<#dump")
+	assert.Contains(t, out, `"x"`)
+}
+
+func TestDiffStr(t *testing.T) {
+	type User struct {
+		Name string
+		Age  int
+	}
+
+	left := User{Name: "Alice", Age: 42}
+	right := User{Name: "Bob", Age: 42}
+
+	out := newDumperT(t).DiffStr(left, right)
+	out = stripANSI(out)
+	assert.Contains(t, out, "<#diff //")
+	assert.Contains(t, out, `-   +Name => "Alice" #string`)
+	assert.Contains(t, out, `+   +Name => "Bob" #string`)
+	assert.Contains(t, out, `    +Age  => 42 #int`)
+}
+
 func TestForceExported(t *testing.T) {
 	type hidden struct {
 		private string
@@ -189,7 +512,7 @@ func TestDetectColorVariants(t *testing.T) {
 		assert.True(t, detectColor())
 
 		out := NewDumper().colorize(colorYellow, "test")
-		assert.Equal(t, "\x1b[33mtest\x1b[0m", out)
+		assert.Equal(t, string(ansiEscape)+"[33mtest"+string(ansiEscape)+"[0m", out)
 	})
 
 	t.Run("forcing no color", func(t *testing.T) {
@@ -205,13 +528,64 @@ func TestDetectColorVariants(t *testing.T) {
 		assert.True(t, detectColor())
 
 		out := NewDumper().colorize(colorYellow, "test")
-		assert.Equal(t, "\x1b[33mtest\x1b[0m", out)
+		assert.Equal(t, string(ansiEscape)+"[33mtest"+string(ansiEscape)+"[0m", out)
+	})
+}
+
+func TestWithoutColorOverridesColorDetection(t *testing.T) {
+	t.Setenv("FORCE_COLOR", "1")
+
+	out := NewDumper(WithoutColor()).colorize(colorYellow, "test")
+	assert.Equal(t, "test", out)
+}
+
+func TestColorizeWithPresetColorizer(t *testing.T) {
+	d := NewDumper()
+	d.colorizer = colorizeUnstyled
+
+	out := d.colorize(colorYellow, "test")
+	assert.Equal(t, "test", out)
+}
+
+func TestColorizeWithDisableColorFlag(t *testing.T) {
+	d := NewDumper()
+	d.disableColor = true
+
+	out := d.colorize(colorYellow, "test")
+	assert.Equal(t, "test", out)
+}
+
+func TestEnsureColorizer(t *testing.T) {
+	t.Run("disable color", func(t *testing.T) {
+		d := NewDumper()
+		d.disableColor = true
+
+		d.ensureColorizer()
+		out := d.colorizer(colorYellow, "test")
+		assert.Equal(t, "test", out)
+	})
+
+	t.Run("detect color", func(t *testing.T) {
+		d := NewDumper()
+
+		d.ensureColorizer()
+		out := d.colorizer(colorYellow, "test")
+		assert.Equal(t, string(ansiEscape)+"[33mtest"+string(ansiEscape)+"[0m", out)
+	})
+
+	t.Run("already set", func(t *testing.T) {
+		d := NewDumper()
+		d.colorizer = colorizeUnstyled
+
+		d.ensureColorizer()
+		out := d.colorizer(colorYellow, "test")
+		assert.Equal(t, "test", out)
 	})
 }
 
 func TestHtmlColorizeUnknown(t *testing.T) {
 	// Color not in htmlColorMap
-	out := colorizeHTML("\033[999m", "test")
+	out := colorizeHTML(string(ansiEscape)+"[999m", "test")
 	assert.Contains(t, out, `<span style="color:`)
 	assert.Contains(t, out, "test")
 }
@@ -223,7 +597,7 @@ func TestUnreadableFallback(t *testing.T) {
 	var ch chan int // nil typed value, not interface
 	rv := reflect.ValueOf(ch)
 
-	newDumperT(t).printValue(tw, rv, 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, rv, 0, newDumpState())
 	tw.Flush()
 
 	output := b.String()
@@ -243,7 +617,7 @@ func TestUnreadableFieldFallback(t *testing.T) {
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 1, ' ', 0)
 
-	newDumperT(t).printValue(tw, v, 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, v, 0, newDumpState())
 	tw.Flush()
 
 	out := sb.String()
@@ -268,18 +642,18 @@ func TestPrimitiveTypes(t *testing.T) {
 		any(42),
 	)
 
-	assert.Contains(t, out, "1")        // int8
-	assert.Contains(t, out, "2")        // int16
-	assert.Contains(t, out, "3")        // uint8
-	assert.Contains(t, out, "4")        // uint16
-	assert.Contains(t, out, "5")        // uintptr
-	assert.Contains(t, out, "1.500000") // float32
-	assert.Contains(t, out, "0 =>")     // array
-	assert.Contains(t, out, "42")       // interface{}
+	assert.Contains(t, out, "1 #int8")
+	assert.Contains(t, out, "2 #int16")
+	assert.Contains(t, out, "3 #uint8")
+	assert.Contains(t, out, "4 #uint16")
+	assert.Contains(t, out, "5 #uintptr")
+	assert.Contains(t, out, "1.500000 #float32")
+	assert.Contains(t, out, "0 => 6 #int") // array
+	assert.Contains(t, out, "42 #int")     // interface{}
 }
 
 func TestEscapeControl_AllVariants(t *testing.T) {
-	in := "\n\t\r\v\f\x1b"
+	in := "\n\t\r\v\f" + string(ansiEscape)
 	out := escapeControl(in)
 
 	assert.Contains(t, out, `\n`)
@@ -296,7 +670,7 @@ func TestDefaultFallback_Unreadable(t *testing.T) {
 
 	var buf strings.Builder
 	tw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', 0)
-	newDumperT(t).printValue(tw, v, 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, v, 0, newDumpState())
 	tw.Flush()
 
 	assert.Contains(t, buf.String(), "<invalid>")
@@ -307,7 +681,7 @@ func TestPrintValue_Uintptr(t *testing.T) {
 	val := uintptr(12345)
 	var buf strings.Builder
 	tw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', 0)
-	newDumperT(t).printValue(tw, reflect.ValueOf(val), 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, reflect.ValueOf(val), 0, newDumpState())
 	tw.Flush()
 
 	assert.Contains(t, buf.String(), "12345")
@@ -319,7 +693,7 @@ func TestPrintValue_UnsafePointer(t *testing.T) {
 	up := unsafe.Pointer(&i)
 	var buf strings.Builder
 	tw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', 0)
-	newDumperT(t).printValue(tw, reflect.ValueOf(up), 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, reflect.ValueOf(up), 0, newDumpState())
 	tw.Flush()
 
 	assert.Contains(t, buf.String(), "unsafe.Pointer")
@@ -329,7 +703,7 @@ func TestPrintValue_Func(t *testing.T) {
 	fn := func() {}
 	var buf strings.Builder
 	tw := tabwriter.NewWriter(&buf, 0, 0, 1, ' ', 0)
-	newDumperT(t).printValue(tw, reflect.ValueOf(fn), 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, reflect.ValueOf(fn), 0, newDumpState())
 	tw.Flush()
 
 	assert.Contains(t, buf.String(), "func()")
@@ -426,6 +800,14 @@ func TestCustomTruncatedSlice(t *testing.T) {
 	}
 }
 
+func TestTruncatedMap(t *testing.T) {
+	m := map[string]int{"a": 1, "b": 2, "c": 3}
+	out := newDumperT(t, WithMaxItems(1)).DumpStr(m)
+	if !strings.Contains(out, "... (truncated)") {
+		t.Error("Expected map to be truncated")
+	}
+}
+
 func TestTruncatedString(t *testing.T) {
 	s := strings.Repeat("x", 100001)
 	out := dumpStrT(t, s)
@@ -463,7 +845,7 @@ func TestDefaultBranchFallback(t *testing.T) {
 	var v reflect.Value // zero reflect.Value
 	var sb strings.Builder
 	tw := tabwriter.NewWriter(&sb, 0, 0, 1, ' ', 0)
-	newDumperT(t).printValue(tw, v, 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, v, 0, newDumpState())
 	tw.Flush()
 	if !strings.Contains(sb.String(), "<invalid>") {
 		t.Error("Expected default fallback for invalid reflect.Value")
@@ -567,6 +949,10 @@ func (fd FriendlyDuration) String() string {
 }
 
 func TestTheKitchenSink(t *testing.T) {
+	type IsZeroer interface {
+		IsZero() bool
+	}
+
 	type Inner struct {
 		ID    int
 		Notes []string
@@ -593,6 +979,7 @@ func TestTheKitchenSink(t *testing.T) {
 		Nested        Inner
 		NestedPtr     *Inner
 		Interface     any
+		InterfaceImpl IsZeroer
 		Recursive     *Ref
 		privateField  string
 		privateStruct Inner
@@ -626,6 +1013,7 @@ func TestTheKitchenSink(t *testing.T) {
 			Blob:  []byte(`{"msg":"hi","status":"cool"}`),
 		},
 		Interface:     map[string]bool{"ok": true},
+		InterfaceImpl: time.Time{},
 		Recursive:     &Ref{},
 		privateField:  "should show",
 		privateStruct: Inner{ID: 5, Notes: []string{"private"}},
@@ -638,32 +1026,36 @@ func TestTheKitchenSink(t *testing.T) {
 
 	// Minimal coverage assertions
 	assert.Contains(t, out, "+String")
-	assert.Contains(t, out, `"test"`)
+	assert.Contains(t, out, `"test" #string`)
 	assert.Contains(t, out, "+Bool")
-	assert.Contains(t, out, "true")
+	assert.Contains(t, out, "true #bool")
 	assert.Contains(t, out, "+Int")
-	assert.Contains(t, out, "42")
+	assert.Contains(t, out, "42 #int")
 	assert.Contains(t, out, "+Float")
-	assert.Contains(t, out, "3.1415")
+	assert.Contains(t, out, "3.141500 #float64")
 	assert.Contains(t, out, "+PtrString")
-	assert.Contains(t, out, `"Hello"`)
+	assert.Contains(t, out, `"Hello" #*string`)
+	assert.Contains(t, out, "+PtrDuration")
+	assert.Contains(t, out, "20m0s #*time.Duration")
 	assert.Contains(t, out, "+SliceInts")
-	assert.Contains(t, out, "0 => 1")
+	assert.Contains(t, out, "0 => 1 #int")
 	assert.Contains(t, out, "+ArrayStrings")
-	assert.Contains(t, out, `"foo"`)
+	assert.Contains(t, out, "[2]string")
+	assert.Contains(t, out, `"foo" #string`)
 	assert.Contains(t, out, "+MapValues")
-	assert.Contains(t, out, "a => 1")
+	assert.Contains(t, out, "a => 1 #int")
+	assert.Contains(t, out, "+InterfaceImpl")
+	assert.Contains(t, out, "0001-01-01 00:00:00 +0000 UTC #godump.IsZeroer")
 	assert.Contains(t, out, "+Nested")
 	assert.Contains(t, out, "+ID") // from nested
 	assert.Contains(t, out, "+Notes")
 	assert.Contains(t, out, "-privateField")
-	assert.Contains(t, out, `"should show"`)
+	assert.Contains(t, out, `"should show" #string`)
 	assert.Contains(t, out, "↩︎") // recursion reference
 
 	// Ensure no panic occurred and a sane dump was produced
 	assert.Contains(t, out, "#")          // loosest
 	assert.Contains(t, out, "Everything") // middle-ground
-
 }
 
 func TestForceExportedFallback(t *testing.T) {
@@ -717,7 +1109,7 @@ func TestPrintValue_ChanNilBranch_Hardforce(t *testing.T) {
 	assert.True(t, v.IsNil())
 	assert.Equal(t, reflect.Chan, v.Kind())
 
-	newDumperT(t).printValue(tw, v, 0, map[uintptr]bool{})
+	newDumperT(t).printValue(tw, v, 0, newDumpState())
 	tw.Flush()
 
 	assert.Contains(t, buf.String(), "customChan(nil)")
@@ -1043,9 +1435,217 @@ func TestDumpJSON(t *testing.T) {
 
 		var got []any
 		err := json.Unmarshal([]byte(output), &got)
-		require.NoError(t, err, "json.Unmarshal failed with output: %q", output)
+		require.NoError(t, err, fmt.Sprintf("json.Unmarshal failed with output: %q", output))
 
 		assert.Equal(t, []any{"foo", float64(123), true}, got)
 	})
+}
 
+func TestDisableStringer(t *testing.T) {
+	data := hidden{secret: "not so secret"}
+
+	d := newDumperT(t, WithDisableStringer(true))
+	v := d.DumpStr(data)
+	require.Contains(t, v, `-secret => "not so secret"`)
+
+	d = newDumperT(t)
+	v = d.DumpStr(data)
+	assert.Contains(t, v, `-secret => 👻 hidden stringer`)
+}
+
+func TestOnlyFields(t *testing.T) {
+	type User struct {
+		ID       int
+		Email    string
+		Password string
+	}
+
+	d := newDumperT(t, WithOnlyFields("ID", "Email"))
+	out := d.DumpStr(User{ID: 10, Email: "user@example.com", Password: "secret"})
+	assert.Contains(t, out, "+ID")
+	assert.Contains(t, out, "+Email")
+	assert.Contains(t, out, "user@example.com")
+	assert.NotContains(t, out, "Password")
+	assert.NotContains(t, out, "secret")
+}
+
+func TestFieldFiltersExact(t *testing.T) {
+	type User struct {
+		UserID   int
+		Email    string
+		Password string
+	}
+
+	d := newDumperT(t, WithExcludeFields("Password"))
+	out := d.DumpStr(User{UserID: 10, Email: "user@example.com", Password: "secret"})
+	assert.Contains(t, out, "+UserID")
+	assert.Contains(t, out, "user@example.com")
+	assert.NotContains(t, out, "Password")
+	assert.NotContains(t, out, "secret")
+}
+
+func TestFieldFiltersMatchModes(t *testing.T) {
+	type User struct {
+		UserID int
+		Email  string
+	}
+
+	d := newDumperT(t, WithExcludeFields("user"), WithFieldMatchMode(FieldMatchPrefix))
+	out := d.DumpStr(User{UserID: 10, Email: "user@example.com"})
+	assert.NotContains(t, out, "+UserID")
+	assert.Contains(t, out, "+Email")
+}
+
+func TestRedactFields(t *testing.T) {
+	type User struct {
+		ID       int
+		Password string
+	}
+
+	d := newDumperT(t, WithRedactFields("Password"))
+	out := d.DumpStr(User{ID: 1, Password: "secret"})
+	assert.Contains(t, out, "+Password => <redacted> #string")
+	assert.NotContains(t, out, "secret")
+}
+
+func TestRedactSensitiveDefaults(t *testing.T) {
+	type User struct {
+		Password   string
+		AuthToken  string
+		SessionKey string
+	}
+
+	d := newDumperT(t, WithRedactSensitive())
+	out := d.DumpStr(User{Password: "secret", AuthToken: "tok", SessionKey: "key"})
+	assert.Contains(t, out, "Password")
+	assert.Contains(t, out, "<redacted> #string")
+	assert.Contains(t, out, "AuthToken")
+	assert.Contains(t, out, "SessionKey")
+	assert.NotContains(t, out, "secret")
+	assert.NotContains(t, out, "tok")
+	assert.NotContains(t, out, "key")
+}
+
+func TestRedactMatchMode(t *testing.T) {
+	type User struct {
+		APIKey string
+		Email  string
+	}
+
+	d := newDumperT(t, WithRedactFields("key"), WithRedactMatchMode(FieldMatchContains))
+	out := d.DumpStr(User{APIKey: "abc", Email: "user@example.com"})
+	assert.Contains(t, out, "+APIKey => <redacted> #string")
+	assert.Contains(t, out, "+Email")
+	assert.NotContains(t, out, "abc")
+}
+
+func TestRedactMatchSuffixAndEmptyCandidate(t *testing.T) {
+	type User struct {
+		APIKey string
+		Email  string
+	}
+
+	d := newDumperT(t,
+		WithRedactFields("Key", ""),
+		WithRedactMatchMode(FieldMatchSuffix),
+	)
+	out := d.DumpStr(User{APIKey: "abc", Email: "user@example.com"})
+	assert.Contains(t, out, "+APIKey")
+	assert.Contains(t, out, "<redacted> #string")
+	assert.Contains(t, out, "+Email")
+	assert.NotContains(t, out, "abc")
+
+	placeholder := d.redactedValue(reflect.Value{})
+	assert.Contains(t, placeholder, "<redacted>")
+}
+
+func TestRecursivePtr(t *testing.T) {
+	s := "string"
+	a := &s
+	b := &a
+	val := &b
+
+	out := dumpStrT(t, val)
+	assert.Contains(t, out, "#***string")
+}
+
+func TestDumpJSON_Coverage(t *testing.T) {
+	var buf bytes.Buffer
+
+	// Replace default dumper's writer *temporarily*
+	oldWriter := defaultDumper.writer
+	defaultDumper.writer = &buf
+	defer func() { defaultDumper.writer = oldWriter }()
+
+	DumpJSON(123, 456)
+
+	out := buf.String()
+	if !strings.Contains(out, "123") || !strings.Contains(out, "456") {
+		t.Fatalf("expected JSON output to contain values, got: %s", out)
+	}
+}
+
+func TestDumpStr_Coverage(t *testing.T) {
+	out := DumpStr(123)
+
+	if !strings.Contains(out, "123") {
+		t.Fatalf("expected DumpStr to include value, got: %s", out)
+	}
+}
+
+func TestShouldTruncateAtDepth(t *testing.T) {
+	type sample struct {
+		Value string
+	}
+
+	tests := []struct {
+		name     string
+		value    reflect.Value
+		indent   int
+		maxDepth int
+		want     bool
+	}{
+		{
+			name:     "indent below max does not truncate",
+			value:    reflect.ValueOf(map[int]string{}),
+			indent:   0,
+			maxDepth: 1,
+			want:     false,
+		},
+		{
+			name:     "indent above max truncates complex values",
+			value:    reflect.ValueOf(sample{}),
+			indent:   2,
+			maxDepth: 1,
+			want:     true,
+		},
+		{
+			name:     "indent equals max truncates collections",
+			value:    reflect.ValueOf([]int{1, 2}),
+			indent:   1,
+			maxDepth: 1,
+			want:     true,
+		},
+		{
+			name:     "indent equals max allows structs",
+			value:    reflect.ValueOf(sample{}),
+			indent:   1,
+			maxDepth: 1,
+			want:     false,
+		},
+		{
+			name:     "indent equals max allows scalars",
+			value:    reflect.ValueOf(42),
+			indent:   1,
+			maxDepth: 1,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shouldTruncateAtDepth(tt.value, tt.indent, tt.maxDepth)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }
