@@ -1001,7 +1001,14 @@ func (d *Dumper) printValue(w io.Writer, v reflect.Value, indent int, state *dum
 				indentPrint(w, indent+1, d.colorize(colorGray, "... (truncated)"))
 				break
 			}
-			keyStr := fmt.Sprintf("%v", key.Interface())
+
+			var val any
+			if key.CanInterface() {
+				val = key.Interface()
+			} else {
+				val = "<unexported>"
+			}
+			keyStr := fmt.Sprintf("%v", val)
 			indentPrint(w, indent+1, fmt.Sprintf(" %s => ", d.colorize(colorMeta, keyStr)))
 			d.printValue(w, v.MapIndex(key), indent+1, state)
 			fmt.Fprintln(w)
